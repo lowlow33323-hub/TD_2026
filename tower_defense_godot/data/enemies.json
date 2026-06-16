@@ -1,0 +1,72 @@
+{
+	"base": {
+		"speed": 76.0,
+		"speed_per_wave": 1.8,
+		"hp": 78.0,
+		"hp_per_wave": 32.0,
+		"reward": 6,
+		"reward_per_wave": 1.1,
+		"reward_soft_cap_wave": 20,
+		"reward_late_scale": 0.0,
+		"reward_late_total_scale_wave": 20,
+		"reward_late_total_scale": 0.35
+	},
+	"basic": {
+		"name": "螞蟻",
+		"color": "#ff9a5e",
+		"speed_multiplier": 1.0,
+		"hp_multiplier": 1.0,
+		"reward_bonus": 0
+	},
+	"tank": {
+		"name": "獨角仙",
+		"color": "#d6a34a",
+		"speed_multiplier": 0.78,
+		"hp_multiplier": 4.7,
+		"reward_bonus": 8,
+		"arrow_damage_taken": 0.55
+	},
+	"fast": {
+		"name": "蟑螂",
+		"color": "#61d6ff",
+		"speed_multiplier": 1.65,
+		"hp_multiplier": 0.72,
+		"reward_bonus": 4
+	},
+	"reviver": {
+		"name": "蜘蛛",
+		"color": "#8ee66b",
+		"speed_multiplier": 1.05,
+		"hp_multiplier": 1.15,
+		"reward_bonus": 7,
+		"revives": 1,
+		"revive_hp_ratio": 0.5,
+		"revive_speed_multiplier": 1.5,
+		"revive_delay": 3.0,
+		"revive_invulnerable_duration": 2.0
+	},
+	"flying": {
+		"name": "蝗蟲",
+		"color": "#e7f1ff",
+		"speed_multiplier": 1.08,
+		"hp_multiplier": 0.66,
+		"reward_bonus": 9,
+		"flying": true
+	},
+	"boss": {
+		"name": "昆蟲魔王",
+		"names": ["蟻后", "聖甲蟲", "蟑螂將軍", "蜘蛛女皇", "昆蟲魔王"],
+		"color": "#c85cff",
+		"speed_multiplier": 0.58,
+		"hp_multiplier": 32.0,
+		"reward_multiplier": 12
+	},
+	"auditor": {
+		"name": "攻擊量審查員",
+		"color": "#fff1a8",
+		"speed_multiplier": 0.85,
+		"hp_multiplier": 9999.0,
+		"reward_bonus": 0,
+		"auditor": true
+	}
+}
