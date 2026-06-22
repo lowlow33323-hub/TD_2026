@@ -2,6 +2,20 @@
 
 本文記錄目前專案的重要修改，方便之後回頭查「改了什麼、為什麼改」。
 
+## Beta 0.5.6 - Netlify GitHub 自動部署設定
+
+- 版本號從 `Beta 0.5.5` 更新為 `Beta 0.5.6`。
+- 專案已連接 GitHub repository：
+  - `https://github.com/lowlow33323-hub/TD_2026.git`
+- 新增根目錄 `netlify.toml`，讓 Netlify 可從 GitHub repository 自動部署。
+- 新增 `scripts/netlify_build.sh`：
+  - Netlify build 時下載官方 Godot `4.6.3` Linux 執行檔。
+  - Netlify build 時下載官方 Godot `4.6.3` export templates。
+  - 執行 Godot import。
+  - 匯出 Web 版到 `tower_defense_godot/builds/web/index.html`。
+- Netlify publish 目錄設定為 `tower_defense_godot/builds/web`。
+- 之後只要 push 到 GitHub，Netlify 連動站點即可自動重新匯出並部署。
+
 ## Beta 0.5.5 - Web 中文字型修正
 
 - 版本號從 `Beta 0.5.4` 更新為 `Beta 0.5.5`。

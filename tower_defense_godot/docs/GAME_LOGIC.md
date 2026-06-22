@@ -707,10 +707,14 @@ func _save_meta_data() -> void
 目前專案已納入 Git：
 
 - commit：`70a2c00 Add Godot tower defense project`
+- commit：`6c6d32b Prepare web deployment and font support`
+- GitHub repository：`https://github.com/lowlow33323-hub/TD_2026.git`
 - 追蹤範圍：`tower_defense_godot/`
 - 已排除：
   - `.DS_Store`
   - Godot `.godot/` 快取
+  - Netlify 本地資料 `.netlify/`
+  - Web build 輸出 `builds/`
   - 舊副本 `path-bender-tower-defense-(4.4)/`
 
 Web 匯出設定：
@@ -730,14 +734,22 @@ Netlify 測試部署：
   - `https://frabjous-dragon-091bbc.netlify.app`
   - 密碼：`My-Drop-Site`
 
+Netlify GitHub 自動部署：
+
+- 設定檔：根目錄 `netlify.toml`
+- 專案 base：`tower_defense_godot`
+- build command：`../scripts/netlify_build.sh`
+- publish 目錄：`tower_defense_godot/builds/web`
+- build 腳本會在 Netlify 環境下載官方 Godot `4.6.3` 與 export templates，再匯出 Web 版。
+
 注意：
 
 - 匿名 Netlify deploy 需要在 60 分鐘內 claim，否則不適合當正式網址。
-- 若要正式維護，建議將 Netlify site claim 到帳號，或綁定 GitHub repository。
 - 之後更新流程：
   1. 修改 Godot 專案。
-  2. 用 Godot Web export 重新輸出 `builds/web`。
-  3. 用 Netlify CLI 或 Netlify 後台重新部署同一個 site。
+  2. 更新版本號與 `CHANGELOG.md`。
+  3. commit 並 push 到 GitHub。
+  4. Netlify 會自動拉取 GitHub 最新 commit、匯出 Web 版並重新部署。
 
 ## 重要函式速查
 

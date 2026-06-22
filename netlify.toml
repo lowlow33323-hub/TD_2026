@@ -1,0 +1,8 @@
+[build]
+  base = "tower_defense_godot"
+  publish = "builds/web"
+  command = "../scripts/netlify_build.sh"
+
+[build.environment]
+  GODOT_VERSION = "4.6.3"
+  GODOT_TAG = "4.6.3-stable"
