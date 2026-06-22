@@ -2,6 +2,40 @@
 
 本文記錄目前專案的重要修改，方便之後回頭查「改了什麼、為什麼改」。
 
+## Beta 0.5.5 - Web 中文字型修正
+
+- 版本號從 `Beta 0.5.4` 更新為 `Beta 0.5.5`。
+- 新增開源中文字型 `Noto Sans TC` 到專案。
+- UI 控制項改用內嵌中文字型，修正 Web 版中文字亂碼。
+- Canvas 繪製文字改用內嵌中文字型。
+- 重新匯出 Web build 並部署到 Netlify 匿名站點。
+- 新版 Netlify 測試網址：
+  - `https://frabjous-dragon-091bbc.netlify.app`
+  - 密碼：`My-Drop-Site`
+
+## Beta 0.5.4 - 路徑顯示修正、衝擊波與音量控制
+
+- 版本號從 `Beta 0.5.3` 更新為 `Beta 0.5.4`。
+- 敵人路徑顯示改為一次繪製完整連續折線，避免被切成虛線。
+- 敵人受到子彈攻擊時會顯示擴散衝擊波。
+- 背景音樂改為更有戰鬥感的節奏循環，並提高預設音量。
+- 右側資訊欄新增 `音樂` 與 `音效` checkbox。
+- `音樂` 與 `音效` 後方新增音量拖拉控制。
+- 首次建立 Godot Web export 設定：
+  - 新增 `export_presets.cfg`
+  - 匯出目標：`builds/web/index.html`
+  - 匯出時排除 `builds/**`，避免 Web build 被重複打包進遊戲資源。
+- 下載並安裝官方 Godot `4.6.3` export templates。
+- 成功產生 Web build：
+  - `index.html`
+  - `index.js`
+  - `index.wasm`
+  - `index.pck`
+  - 圖示與 audio worklet 檔案
+- 首次部署到 Netlify 匿名站點：
+  - `https://hilarious-panda-60a585.netlify.app`
+  - 密碼：`My-Drop-Site`
+
 ## Beta 0.5.3 - 鍵盤快捷鍵擴充
 
 - 版本號從 `Beta 0.5.2` 更新為 `Beta 0.5.3`。
@@ -10,6 +44,12 @@
 - 新增 `S`：降低速度，依序切回 `16x -> 4x -> 2x -> 1x`。
 - 新增 `R`：切換是否顯示敵人路徑。
 - 新增 `A`：切換自動開始。
+- 將目前專案納入 Git 版本管理：
+  - commit：`70a2c00 Add Godot tower defense project`
+  - 納入 `tower_defense_godot` 專案檔案。
+  - 新增根目錄 `.gitignore`。
+  - 排除 `.DS_Store` 與 Godot `.godot/` 快取。
+  - 舊資料夾 `_old_codex_windows/` 與 `path-bender-tower-defense-(4.4)/` 未納入追蹤。
 
 ## Beta 0.5.2 - 升級星星、受擊弧與塔地板
 
@@ -421,3 +461,15 @@ Godot headless 載入通過
 - 若之後繼續改平衡，優先更新本檔。
 - 每次完成一個功能或平衡調整，新增一小段紀錄。
 - 若正式進入版本管理，可再搭配 Git commit message 使用。
+
+## 後期版本更新要點
+
+- Web 版效能優化：
+  - 分層繪製背景格線、塔地板、路徑與動態物件。
+  - 減少每幀整張畫面重畫造成的鈍挫。
+- 降低特效負擔：
+  - 控制衝擊波、浮動文字、透明路徑等同時存在數量。
+  - 視需要加入 Web 版低特效模式。
+- 字型瘦身：
+  - 目前已內嵌 `Noto Sans TC` 修正 Web 中文亂碼。
+  - 後續可改成遊戲用字子集字型，降低首次載入大小。

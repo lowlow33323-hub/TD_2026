@@ -3,3 +3,11 @@
 
 # Godot editor cache
 **/.godot/
+
+# Local deployment/build output
+.netlify/
+**/builds/
+
+# Imported backup copies
+_old_codex_windows/
+path-bender-tower-defense-(4.4)/

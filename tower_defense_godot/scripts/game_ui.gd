@@ -2,6 +2,7 @@ extends RefCounted
 
 const Defs = preload("res://scripts/game_defs.gd")
 const GameData = preload("res://scripts/game_data.gd")
+const GameFont = preload("res://fonts/NotoSansTC-Regular.ttf")
 
 
 static func build(owner) -> void:
@@ -10,6 +11,14 @@ static func build(owner) -> void:
 	_build_ranking_panel(owner)
 	_build_difficulty_panel(owner)
 	_build_game_panel(owner)
+	_apply_font_tree(owner.ui_layer)
+
+
+static func _apply_font_tree(node: Node) -> void:
+	if node is Control:
+		(node as Control).add_theme_font_override("font", GameFont)
+	for child in node.get_children():
+		_apply_font_tree(child)
 
 
 static func connect_buttons(owner) -> void:

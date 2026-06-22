@@ -1,6 +1,6 @@
 # Path Bender Tower Defense - 遊戲邏輯說明
 
-本文說明目前 `Beta 0.5.3` 的主要運行流程、檔案職責，以及 `main.gd` 與其他 `.gd` 檔案之間的調用關係。目標是讓後續調整畫面精細度、塔造型、子彈、敵人種類、場景與數值平衡時，可以快速找到該改哪裡。
+本文說明目前 `Beta 0.5.5` 的主要運行流程、檔案職責，以及 `main.gd` 與其他 `.gd` 檔案之間的調用關係。目標是讓後續調整畫面精細度、塔造型、子彈、敵人種類、場景與數值平衡時，可以快速找到該改哪裡。
 
 ## 專案概覽
 
@@ -702,6 +702,43 @@ func _save_meta_data() -> void
 - 難度
 - Boss 排行榜
 
+## Git 與 Web 部署
+
+目前專案已納入 Git：
+
+- commit：`70a2c00 Add Godot tower defense project`
+- 追蹤範圍：`tower_defense_godot/`
+- 已排除：
+  - `.DS_Store`
+  - Godot `.godot/` 快取
+  - 舊副本 `path-bender-tower-defense-(4.4)/`
+
+Web 匯出設定：
+
+- 檔案：`export_presets.cfg`
+- preset：`Web`
+- 輸出目錄：`builds/web/`
+- 輸出入口：`builds/web/index.html`
+- 已安裝官方 Godot `4.6.3` Web export templates。
+
+Netlify 測試部署：
+
+- 首次匿名部署：
+  - `https://hilarious-panda-60a585.netlify.app`
+  - 密碼：`My-Drop-Site`
+- 修正中文字型後重新部署：
+  - `https://frabjous-dragon-091bbc.netlify.app`
+  - 密碼：`My-Drop-Site`
+
+注意：
+
+- 匿名 Netlify deploy 需要在 60 分鐘內 claim，否則不適合當正式網址。
+- 若要正式維護，建議將 Netlify site claim 到帳號，或綁定 GitHub repository。
+- 之後更新流程：
+  1. 修改 Godot 專案。
+  2. 用 Godot Web export 重新輸出 `builds/web`。
+  3. 用 Netlify CLI 或 Netlify 後台重新部署同一個 site。
+
 ## 重要函式速查
 
 | 函式 | 位置 | 用途 |
@@ -731,6 +768,21 @@ func _save_meta_data() -> void
 | `enemy()` | `game_data.gd` | 讀敵人資料 |
 
 ## 後續開發定位
+
+## 後期版本更新要點
+
+### Web 版效能優化
+
+- 分層繪製：
+  - 將背景格線、塔佔用地板、敵人路徑等不常變動的畫面拆成快取層。
+  - 每幀只重畫敵人、子彈、衝擊波、浮動文字等動態元素。
+  - 目標是降低 Godot Web 版每幀繪製成本，改善 Safari 或低效能裝置的鈍挫感。
+- 降低特效負擔：
+  - 控制同時存在的衝擊波、浮動文字、路徑透明疊色與其他短效動畫數量。
+  - 必要時增加 Web 版專用特效等級，例如 `低 / 中 / 高`。
+- 字型瘦身：
+  - 目前 Web 版已內嵌 `Noto Sans TC` 修正中文字亂碼，但完整中文字型檔較大。
+  - 後續可製作只包含遊戲用字的子集字型，降低首次載入大小。
 
 想改畫面精細度：
 

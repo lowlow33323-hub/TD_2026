@@ -10,6 +10,7 @@ const GameUI = preload("res://scripts/game_ui.gd")
 const GameData = preload("res://scripts/game_data.gd")
 const WaveManager = preload("res://scripts/wave_manager.gd")
 const SaveManager = preload("res://scripts/save_manager.gd")
+const GameFont = preload("res://fonts/NotoSansTC-Regular.ttf")
 
 var blocked: Dictionary = {}
 var towers: Array[Tower] = []
@@ -1008,5 +1009,6 @@ func _draw() -> void:
 		"floating_texts": floating_texts,
 		"impact_waves": impact_waves,
 		"lives": lives,
-		"difficulty_name": difficulty_name()
+		"difficulty_name": difficulty_name(),
+		"font": GameFont
 	})

@@ -20,7 +20,7 @@ static func render(canvas: Node2D, state: Dictionary) -> void:
 		draw_floating_texts(canvas, state)
 		draw_wave_banner(canvas, state, viewport_size)
 		if int(state["lives"]) <= 0:
-			draw_game_over(canvas, viewport_size)
+			draw_game_over(canvas, viewport_size, state.get("font", ThemeDB.fallback_font))
 	else:
 		draw_menu_background(canvas, viewport_size)
 
@@ -87,10 +87,11 @@ static func draw_wave_banner(canvas: Node2D, state: Dictionary, viewport_size: V
 	var alpha: float = min(1.0, ratio * 1.4)
 	var font_size := 54
 	var text := "第 %d 波" % int(state.get("wave", 0))
+	var font: Font = state.get("font", ThemeDB.fallback_font)
 	var grid_rect: Rect2 = state["grid_rect"]
 	var center: Vector2 = grid_rect.get_center()
-	var text_size: Vector2 = ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
-	canvas.draw_string(ThemeDB.fallback_font, center - Vector2(text_size.x * 0.5, 0.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1.0, 0.91, 0.45, alpha))
+	var text_size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+	canvas.draw_string(font, center - Vector2(text_size.x * 0.5, 0.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1.0, 0.91, 0.45, alpha))
 
 
 static func draw_build_preview(canvas: Node2D, state: Dictionary) -> void:
@@ -411,6 +412,7 @@ static func draw_projectiles(canvas: Node2D, state: Dictionary) -> void:
 static func draw_floating_texts(canvas: Node2D, state: Dictionary) -> void:
 	var floating_texts: Array = state.get("floating_texts", [])
 	var cell_size: float = state["cell_size"]
+	var font: Font = state.get("font", ThemeDB.fallback_font)
 	for entry in floating_texts:
 		if typeof(entry) != TYPE_DICTIONARY:
 			continue
@@ -419,7 +421,7 @@ static func draw_floating_texts(canvas: Node2D, state: Dictionary) -> void:
 		var color: Color = entry.get("color", Color.WHITE)
 		var ratio := clampf(float(entry.get("time", 0.0)) / 0.9, 0.0, 1.0)
 		color.a = ratio
-		canvas.draw_string(ThemeDB.fallback_font, pos + Vector2(-cell_size * 0.35, -cell_size * 0.25), text, HORIZONTAL_ALIGNMENT_LEFT, -1, max(12, int(cell_size * 0.62)), color)
+		canvas.draw_string(font, pos + Vector2(-cell_size * 0.35, -cell_size * 0.25), text, HORIZONTAL_ALIGNMENT_LEFT, -1, max(12, int(cell_size * 0.62)), color)
 
 
 static func draw_impact_waves(canvas: Node2D, state: Dictionary) -> void:
@@ -442,9 +444,11 @@ static func draw_impact_waves(canvas: Node2D, state: Dictionary) -> void:
 		canvas.draw_arc(pos, cell_size * (0.25 + progress * 0.75), center_angle - arc_half, center_angle + arc_half, 18, color, max(2.0, cell_size * 0.09))
 
 
-static func draw_game_over(canvas: Node2D, viewport_size: Vector2) -> void:
+static func draw_game_over(canvas: Node2D, viewport_size: Vector2, font: Font = null) -> void:
+	if font == null:
+		font = ThemeDB.fallback_font
 	canvas.draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0, 0, 0, 0.55))
-	canvas.draw_string(ThemeDB.fallback_font, viewport_size * 0.5 + Vector2(-100, 0), "遊戲結束", HORIZONTAL_ALIGNMENT_LEFT, -1, 38, Color.WHITE)
+	canvas.draw_string(font, viewport_size * 0.5 + Vector2(-100, 0), "遊戲結束", HORIZONTAL_ALIGNMENT_LEFT, -1, 38, Color.WHITE)
 
 
 static func cell_rect(state: Dictionary, cell: Vector2i) -> Rect2:
