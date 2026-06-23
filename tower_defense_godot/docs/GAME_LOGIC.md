@@ -1,36 +1,52 @@
 # Path Bender Tower Defense - 遊戲邏輯說明
 
-本文說明目前 `Beta 0.5.5` 的主要運行流程、檔案職責，以及 `main.gd` 與其他 `.gd` 檔案之間的調用關係。目標是讓後續調整畫面精細度、塔造型、子彈、敵人種類、場景與數值平衡時，可以快速找到該改哪裡。
+本文說明目前 `Beta 0.6.8` 的主要運行流程、檔案職責，以及 `main.gd` 與各 `.gd` 檔案之間的調用關係。這份文件的目標是讓後續調整畫面精細度、塔造型、子彈、敵人種類、場景、平衡與 Web 效能時，可以快速找到該改哪裡。
 
 ## 專案概覽
 
-核心玩法：
-
 - 敵人從左側入口往右側出口移動。
-- 玩家建造 2x2 塔來改變敵人路線。
+- 玩家建造 `2x2` 塔來改變敵人路線。
 - 建塔可以延長路徑，但不能完全堵死入口到出口。
 - 敵人可 8 方向移動，包含斜線，但不能斜穿過被塔封住的角落。
-- 第 50 波是最後一波，通過後勝利。
+- 第 50 波是最後一波，通過後會出現攻擊量審查員並記錄排行榜。
+- Web 版已加入分層繪製、字型子集、Netlify 自動部署、版本化資源與高負載低畫質模式。
+
+## 維護文件索引
+
+- `docs/ONBOARDING.md`：新接手者如何執行、測試、部署與定位修改位置。
+- `docs/DATA_SCHEMA.md`：`data/towers.json`、`data/enemies.json` 欄位說明。
+- `docs/ARCHITECTURE_DECISIONS.md`：重要架構決策與為什麼這樣設計。
+- `docs/ROADMAP.md`：後續開發階段、完成標準與暫緩項目。
+- `docs/PERFORMANCE_GUIDE.md`：Web 與後期大量物件效能規則。
+- `docs/CHANGELOG.md`：每個版本的修改紀錄。
+- `docs/NEXT_PROJECT_CHECKLIST.md`：下個新專案可提前規劃的經驗清單。
 
 ## 目前檔案職責
 
 ```text
-scripts/main.gd             主流程、遊戲狀態、建塔、波次、戰鬥更新、存檔
-scripts/game_defs.gd        共用常數：地圖、塔/敵人類型、畫面狀態、版本號
-scripts/game_data.gd        讀取資料表，提供塔與敵人數值查詢
-scripts/pathfinder.gd       路徑搜尋、防堵路、斜線移動限制
-scripts/game_renderer.gd    畫面繪製：格線、路徑、塔、敵人、子彈、背景
-scripts/game_ui.gd          UI 建立、按鈕連接、版面配置、HUD 文字更新
-scripts/tower.gd            單座塔的資料、升級與數值套用
-scripts/enemy.gd            單隻敵人的資料、速度、血量、狀態效果
-scripts/projectile.gd       子彈資料：位置、目標、傷害、緩速、濺射
-data/towers.json            塔數值資料表
-data/enemies.json           敵人數值資料表
-scenes/main.tscn            Godot 主場景
-project.godot               Godot 專案設定
+scripts/main.gd              主流程、遊戲狀態、輸入、敵人移動、流程協調
+scripts/game_defs.gd         共用常數：地圖、類型、畫面狀態、版本號
+scripts/game_data.gd         讀取資料表，提供塔與敵人數值查詢
+scripts/game_ui.gd           UI 建立、按鈕連接、版面配置、HUD 文字更新
+scripts/game_renderer.gd     畫面繪製：靜態層、動態層、塔、敵人、子彈、特效
+scripts/static_board_layer.gd 靜態繪製層節點，回呼 main.gd 繪製靜態畫面
+scripts/pathfinder.gd        路徑搜尋、防堵路、斜線移動限制
+scripts/wave_manager.gd      波次、難度、出怪節奏、敵人種類選擇
+scripts/save_manager.gd      存檔、讀檔、meta/排行榜資料
+scripts/combat_manager.gd    塔攻擊、子彈移動、命中、傷害、目標搜尋
+scripts/build_manager.gd     建塔、拆塔、升級、升到最高等
+scripts/audio_manager.gd     音效建立、背景音樂生成、音量套用
+scripts/dialog_manager.gd    自製確認視窗，避免 Web 中文亂碼
+scripts/tower.gd             單座塔的資料、升級與數值套用
+scripts/enemy.gd             單隻敵人的資料、速度、血量、復活、狀態效果
+scripts/projectile.gd        子彈資料：位置、目標、傷害、緩速、濺射
+data/towers.json             塔數值資料表
+data/enemies.json            敵人數值資料表
+scenes/main.tscn             Godot 主場景
+project.godot                Godot 專案設定
 ```
 
-`main.gd` 是目前的遊戲中樞，但已把路徑、繪圖、UI、資料讀取、塔/敵人/子彈物件拆出去。後續若要改外觀，通常先看 `game_renderer.gd`；若要改 UI，先看 `game_ui.gd`；若要調數值，先改 `data/*.json`。
+目前 `main.gd` 仍是遊戲流程中樞，但戰鬥、建造、音效、對話框、UI、繪圖、路徑、波次、存檔、資料讀取都已拆到獨立檔案。後續新增內容時，優先改對應 manager，不要再把細節塞回 `main.gd`。
 
 ## 主調用關係
 
@@ -41,26 +57,53 @@ flowchart TD
 	Data["game_data.gd"]
 	UI["game_ui.gd"]
 	Renderer["game_renderer.gd"]
+	StaticLayer["static_board_layer.gd"]
 	Pathfinder["pathfinder.gd"]
+	Wave["wave_manager.gd"]
+	Save["save_manager.gd"]
+	Combat["combat_manager.gd"]
+	Build["build_manager.gd"]
+	Audio["audio_manager.gd"]
+	Dialog["dialog_manager.gd"]
 	Tower["tower.gd"]
 	Enemy["enemy.gd"]
 	Projectile["projectile.gd"]
 	TowersJson["data/towers.json"]
 	EnemiesJson["data/enemies.json"]
 
-	Main --> Defs
 	Main --> UI
 	Main --> Renderer
+	Main --> StaticLayer
 	Main --> Pathfinder
+	Main --> Wave
+	Main --> Save
+	Main --> Combat
+	Main --> Build
+	Main --> Audio
+	Main --> Dialog
 	Main --> Tower
 	Main --> Enemy
 	Main --> Projectile
 	Main --> Data
+	Main --> Defs
 
 	UI --> Defs
 	UI --> Data
+	UI --> GameFont["fonts/NotoSansTC-Regular.ttf"]
 	Renderer --> Defs
+	StaticLayer --> Main
 	Pathfinder --> Defs
+	Wave --> Defs
+	Save --> Tower
+	Combat --> Defs
+	Combat --> Projectile
+	Combat --> Enemy
+	Combat --> Tower
+	Build --> Defs
+	Build --> Tower
+	Build --> Wave
+	Dialog --> UI
+	Dialog --> GameFont
 	Tower --> Defs
 	Tower --> Data
 	Enemy --> Defs
@@ -71,36 +114,33 @@ flowchart TD
 	Data --> EnemiesJson
 ```
 
-## `main.gd` 與其他檔案的連接點
+## `main.gd` 的角色
 
-`main.gd` 開頭 preload 目前主要模組：
+`main.gd` 現在主要負責：
+
+- 保存全局遊戲狀態：金幣、生命、波數、塔、敵人、子彈、路徑、UI 狀態。
+- Godot 生命週期：`_ready()`、`_process()`、`_unhandled_input()`、`_draw()`。
+- 流程協調：呼叫各 manager。
+- 敵人移動與死亡處理。
+- 畫面狀態與 render state 組裝。
+
+`main.gd` 保留很多 wrapper，例如：
 
 ```gdscript
-const Tower = preload("res://scripts/tower.gd")
-const Enemy = preload("res://scripts/enemy.gd")
-const Projectile = preload("res://scripts/projectile.gd")
-const Pathfinder = preload("res://scripts/pathfinder.gd")
-const GameRenderer = preload("res://scripts/game_renderer.gd")
-const GameUI = preload("res://scripts/game_ui.gd")
-const GameData = preload("res://scripts/game_data.gd")
+func _update_towers(delta: float) -> void:
+	CombatManager.update_towers(self, delta)
+
+func try_build_or_select(cell: Vector2i) -> void:
+	BuildManager.try_build_or_select(self, cell)
+
+func _apply_audio_settings() -> void:
+	AudioManager.apply_settings(self)
+
+func popup_confirmation(title: String, text: String, confirmed_action: Callable) -> void:
+	DialogManager.popup_confirmation(self, title, text, confirmed_action)
 ```
 
-主要調用方向：
-
-| 來源 | 呼叫 | 目的 |
-|---|---|---|
-| `main.gd` | `GameUI.build(self)` | 建立所有 UI panel、按鈕、文字 |
-| `main.gd` | `GameUI.connect_buttons(self)` | 連接按鈕 signal 到 `main.gd` 的遊戲函式 |
-| `main.gd` | `GameUI.update_layout(self)` | 根據視窗大小更新 UI 與建造區位置 |
-| `main.gd` | `GameUI.show_screen(self, screen)` | 切換主選單、規則、排行榜、難度、遊戲畫面 |
-| `main.gd` | `GameUI.update(self)` | 更新 HUD 文字、塔按鈕、速度按鈕、存檔按鈕狀態 |
-| `main.gd` | `GameRenderer.render(self, state)` | 每次 `_draw()` 時繪製遊戲畫面 |
-| `main.gd` | `Pathfinder.find_path(blocked)` | 建塔、防堵路、出生敵人前計算完整路徑 |
-| `main.gd` | `Pathfinder.find_path_from(cell, blocked)` | 既有敵人重新尋路 |
-| `main.gd` | `Tower.new(...)` | 建造或讀檔時建立塔物件 |
-| `main.gd` | `Enemy.new(...)` | 波次生成敵人 |
-| `main.gd` | `Projectile.new(...)` | 塔攻擊時建立子彈 |
-| `main.gd` | `GameData.tower_cost/name(...)` | 查塔價格與名稱 |
+這樣既能讓 UI 和流程呼叫保持穩定，也能把細節放到獨立檔案。
 
 ## 啟動流程
 
@@ -110,27 +150,30 @@ Godot 啟動順序：
 2. `run/main_scene` 指向 `res://scenes/main.tscn`。
 3. `main.tscn` 建立主節點。
 4. 主節點掛載 `scripts/main.gd`。
-5. Godot 呼叫 `main.gd` 的 `_ready()`。
+5. Godot 呼叫 `_ready()`。
 
-`_ready()` 流程：
+`_ready()` 主要流程：
 
 ```gdscript
+static_board_layer.owner_node = self
+add_child(static_board_layer)
 add_child(ui_layer)
 _build_audio()
 _build_ui()
 _connect_ui()
 _load_meta_data()
 _reset_game_state()
-show_screen(SCREEN_MENU)
+show_screen(Defs.SCREEN_MENU)
 set_process(true)
 ```
 
 對外調用：
 
-- `_build_ui()` 只是 wrapper，實際呼叫 `GameUI.build(self)`。
-- `_connect_ui()` 只是 wrapper，實際呼叫 `GameUI.connect_buttons(self)`。
-- `_reset_game_state()` 會清空塔、敵人、子彈，再呼叫 `find_path(blocked)`。
-- `show_screen(SCREEN_MENU)` 會呼叫 `GameUI.show_screen(self, SCREEN_MENU)`。
+- `_build_audio()` -> `AudioManager.build(self)`
+- `_build_ui()` -> `GameUI.build(self)`
+- `_connect_ui()` -> `GameUI.connect_buttons(self)`
+- `_load_meta_data()` -> `SaveManager.apply_loaded_data(self)`
+- `show_screen(...)` -> `GameUI.show_screen(self, screen)`
 
 ## 每幀主流程
 
@@ -145,24 +188,31 @@ func _process(delta: float) -> void
 1. `_update_layout()`
    - 轉呼叫 `GameUI.update_layout(self)`。
    - 更新 `cell_size`、`grid_origin`、`grid_rect`。
-2. `_update_hover_cell()`
-   - 計算滑鼠目前指向的格子。
-   - 檢查 2x2 佔地、是否有敵人、是否會堵死路。
-   - 需要時呼叫 `find_path(test_blocked)`。
-3. 如果目前是遊戲畫面且還沒結束：
-   - `_update_spawn(game_delta)`
+2. `update_static_layer_if_needed()`
+   - 比對靜態層簽名。
+   - 地圖、路徑、塔底座、格線、Boss 底色等有變才重畫靜態層。
+3. `_update_hover_cell()`
+   - 只有滑鼠移到新格子時才重新檢查建造預覽與防堵路。
+4. 如果目前是遊戲畫面、未結束、且沒有確認視窗：
+   - `_update_spawn(game_delta)` -> `WaveManager.update_spawn(self, delta)`
    - `_update_enemies(game_delta)`
-   - `_update_towers(game_delta)`
-   - `_update_projectiles(game_delta)`
-4. 更新訊息倒數與出生點發光倒數。
-5. `_update_ui()`
-   - 轉呼叫 `GameUI.update(self)`。
-6. `queue_redraw()`
-   - 要求 Godot 下一次呼叫 `_draw()`。
+   - `_update_towers(game_delta)` -> `CombatManager.update_towers(self, delta)`
+   - `_update_projectiles(game_delta)` -> `CombatManager.update_projectiles(self, delta)`
+5. 更新訊息、出生點發光、波次提示、生命閃爍、飄字、衝擊波。
+6. `_update_ui()`
+   - 先比對 UI 狀態簽名。
+   - 狀態有變才呼叫 `GameUI.update(self)`。
+7. `queue_redraw()` 要求 Godot 下一次呼叫 `_draw()`。
 
-`game_delta = delta * game_speed`，所以速度按鈕會影響敵人移動、塔攻擊、子彈移動、生成節奏。
+`game_delta = delta * game_speed`，所以速度按鈕會影響敵人移動、塔攻擊、子彈移動與生成節奏。
 
-## 畫面與 UI 流程
+確認視窗開啟時：
+
+- `confirmation_dialog_open = true`
+- `_process()` 不會跑出怪、敵人、塔、子彈更新
+- 倒數不會繼續扣秒
+
+## UI 流程
 
 畫面狀態由 `current_screen` 控制：
 
@@ -174,14 +224,7 @@ SCREEN_DIFFICULTY
 SCREEN_GAME
 ```
 
-`main.gd` 的 `show_screen(screen)` 是 wrapper：
-
-```gdscript
-func show_screen(screen: String) -> void:
-	GameUI.show_screen(self, screen)
-```
-
-`game_ui.gd` 的 `show_screen(owner, screen)` 會：
+`GameUI.show_screen(owner, screen)` 會：
 
 1. 設定 `owner.current_screen`。
 2. 清掉 `owner.last_viewport_size`，強制重新 layout。
@@ -194,121 +237,173 @@ func show_screen(screen: String) -> void:
 
 - `開始遊戲` -> `owner.start_new_game()`
 - `繼續遊戲` -> `owner.load_saved_game()`
-- `操作規則` -> `owner.show_screen(SCREEN_RULES)`
-- `排行榜` -> `owner.show_screen(SCREEN_RANKING)`
-- `難度調整` -> `owner.show_screen(SCREEN_DIFFICULTY)`
+- `操作規則` -> `owner.show_screen(Defs.SCREEN_RULES)`
+- `排行榜` -> `owner.show_screen(Defs.SCREEN_RANKING)`
+- `難度調整` -> `owner.show_screen(Defs.SCREEN_DIFFICULTY)`
 - `下一波` -> `owner.start_wave()`
 - `砲塔/箭塔/冰凍塔` -> `owner.select_build_type(...)`
-- `1x/2x/3x/4x` -> `owner.set_game_speed(...)`
+- `1x/2x/4x/8x/16x` -> `owner.set_game_speed(...)`
 - `存檔` -> `owner.save_game()`
 - `回主選單` -> `owner.confirm_return_to_menu()`
 - `退出` -> `owner.confirm_exit_game()`
+- `顯示敵人路徑` -> 更新 `show_enemy_path` 並重畫靜態層
+- `自動開始` -> 更新 `auto_start_enabled`
+- `音樂/音效` -> 更新 audio 設定
 
-注意：`GameUI` 只負責 UI，不直接改戰鬥規則。真正開始遊戲、開始波次、建塔、存檔等行為仍在 `main.gd`。
+UI 文字更新有 `ui_update_signature`，沒有狀態變動時不重刷 Label/Button。
+
+## 對話視窗流程
+
+確認視窗由 `DialogManager` 自製，不使用 Godot 內建 `ConfirmationDialog`，避免 Web 版中文內文亂碼。
+
+調用關係：
+
+```text
+main.gd confirm_return_to_menu()
+-> main.gd popup_confirmation(...)
+-> DialogManager.popup_confirmation(owner, title, text, confirmed_action)
+```
+
+自製視窗內容：
+
+- 半透明遮罩
+- Panel
+- 標題 Label
+- 內文 Label
+- `確定` / `取消` 按鈕
+- 全部套用 `fonts/NotoSansTC-Regular.ttf`
+
+視窗開啟時 `confirmation_dialog_open = true`，遊戲更新會暫停。
 
 ## 繪圖流程
 
-Godot 呼叫 `main.gd`：
+目前繪圖分成靜態層與動態層。
+
+Godot 呼叫：
 
 ```gdscript
 func _draw() -> void:
-	GameRenderer.render(self, {...})
+	GameRenderer.render_dynamic(self, render_state())
+
+func _draw_static_layer(canvas: Node2D) -> void:
+	GameRenderer.render_static(canvas, render_state())
 ```
 
-`main.gd` 會把目前繪圖需要的狀態包成 Dictionary 傳給 `GameRenderer`，包含：
+`static_board_layer.gd` 的 `_draw()` 會回呼：
 
-- `current_screen`
-- `grid_rect`
+```gdscript
+owner_node._draw_static_layer(self)
+```
+
+靜態層繪製：
+
+- 背景
+- 格線
+- 建造地板
+- 敵人路徑
+- 塔底座
+- 冰凍塔外觀
+- 塔等級紅點 / 星星
+
+動態層繪製：
+
+- 出生點發光
+- 建造 hover 預覽
+- 選取塔範圍
+- 砲塔砲管 / 箭塔發射臂
+- 敵人
+- 子彈
+- 衝擊波
+- 飄字
+- 波次提示
+- 遊戲結束遮罩
+
+靜態層重畫條件由 `build_static_layer_signature()` 決定，包含：
+
+- 畫面大小
 - `grid_origin`
 - `cell_size`
-- `blocked`
-- `current_path`
-- `hover_cell`
-- `hover_can_build`
-- `spawn_flash_timer`
-- `towers`
-- `selected_tower`
-- `enemies`
-- `projectiles`
-- `lives`
+- `grid_rect`
+- blocked cells
+- current path
+- 是否顯示敵人路徑
+- Boss 波底色狀態
 
-`game_renderer.gd` 的繪圖順序：
+## 高負載自動低畫質模式
 
-1. `draw_background_details()`
-2. 如果在遊戲畫面：
-   - `draw_grid()`
-   - `draw_path()`
-   - `draw_spawn_flash()`
-   - `draw_build_preview()`
-   - `draw_towers()`
-   - `draw_enemies()`
-   - `draw_projectiles()`
-   - `draw_game_over()`
-3. 如果不在遊戲畫面：
-   - `draw_menu_background()`
+`game_renderer.gd` 會根據 `visual_load` 降低繪製負擔。
 
-後續要改塔造型，優先看：
+`visual_load()` 目前是：
 
 ```gdscript
-draw_towers()
-draw_cannon_tower()
-draw_arrow_tower()
-draw_ice_tower()
+return enemies.size() + projectiles.size() + impact_waves.size()
 ```
 
-後續要改敵人外觀，優先看：
+降載規則：
 
-```gdscript
-draw_enemies()
-enemy_color()
-draw_enemy_body()
-```
+- 中負載：一般敵人血條隔隻顯示。
+- 高負載：不繪製子彈，傷害仍照算。
+- 高負載：一般敵人不顯示血條，只保留 Boss 與審查員。
+- 忙碌狀態：選取塔射程圈不畫大面積半透明填色，只畫外框。
+- `4x`、`8x`、`16x`：不繪製子彈與怪物血條。
 
-後續要改子彈特效，優先看：
-
-```gdscript
-draw_projectiles()
-```
+這些只影響視覺，不改遊戲規則、傷害、命中或波次。
 
 ## 建造系統
 
-玩家點擊建造區時，入口在：
-
-```gdscript
-func _unhandled_input(event: InputEvent) -> void
-```
-
-左鍵流程：
+入口仍在 `main.gd`：
 
 ```text
 _unhandled_input()
--> world_to_cell(mouse_pos)
--> try_build_or_select(cell)
+├─ 滑鼠左鍵
+│  -> world_to_cell(mouse_pos)
+│  -> try_build_or_select(cell)
+│  -> BuildManager.try_build_or_select(self, cell)
+└─ 觸控點擊
+   -> world_to_cell(touch_pos)
+   -> handle_touch_primary_action(cell)
+   -> 第一次點空地只顯示半透明預覽
+   -> 第二次點同一格才呼叫 try_build_or_select(cell)
 ```
 
-`try_build_or_select(cell)` 判斷順序：
+`BuildManager.validate_build(owner, cell)` 集中檢查能不能建造，會回傳：
+
+- `ok`: 是否可建造。
+- `message`: 不可建造時的提示文字。
+- `path`: 可建造時的新路徑。
+
+`BuildManager.try_build_or_select(owner, cell)` 判斷順序：
 
 1. 如果點到既有塔，設定 `selected_tower`。
-2. 如果波次進行中，拒絕建造。
-3. `can_place_footprint(cell)` 檢查 2x2 佔地是否在地圖內且未被占用。
-4. `tower_cost(selected_build_type)` 查資料表價格。
-5. 金幣不足則 `reject_build(...)`。
-6. `footprint_has_enemy(cell)` 檢查欲建造區塊是否有敵人。
-7. 複製 `blocked` 成 `test_blocked`。
-8. 把欲建造的 2x2 區塊加入 `test_blocked`。
-9. 呼叫 `find_path(test_blocked)`。
-10. 如果無路，拒絕建造並播放錯誤音。
-11. 建立 `Tower.new(cell, selected_build_type)`。
-12. 將塔加入 `towers`。
-13. 更新 `blocked` 與 `current_path`。
-14. 扣金幣並呼叫 `retarget_live_enemies()`。
+2. 呼叫 `BuildManager.validate_build(owner, cell)`。
+3. 如果波次進行中，拒絕建造。
+4. `owner.can_place_footprint(cell)` 檢查 `2x2` 佔地是否在地圖內且未被占用。
+5. `owner.tower_cost(owner.selected_build_type)` 查資料表價格。
+6. 金幣不足則 `owner.reject_build(...)`。
+7. `owner.footprint_has_enemy(cell)` 檢查欲建造區塊是否有敵人。
+8. 複製 `owner.blocked` 成 `test_blocked`。
+9. 把欲建造的 `2x2` 區塊加入 `test_blocked`。
+10. 呼叫 `owner.find_path(test_blocked)`。
+11. 如果無路，拒絕建造並播放錯誤音。
+12. 建立 `Tower.new(cell, owner.selected_build_type)`。
+13. 將塔加入 `owner.towers`。
+14. 更新 `owner.blocked` 與 `owner.current_path`。
+15. 扣金幣，播放建造音效，呼叫 `owner.retarget_live_enemies()`。
 
-與其他檔案的關係：
+拆塔流程在：
 
-- `Tower.new(...)` 進入 `tower.gd`。
-- `tower.gd` 透過 `GameData.tower(type_id)` 讀 `data/towers.json`。
-- `find_path(...)` 轉呼叫 `Pathfinder.find_path(...)`。
-- `reject_build(...)` 會播放 `error_audio`。
+```gdscript
+BuildManager.remove_tower(owner, cell)
+```
+
+升級流程在：
+
+```gdscript
+BuildManager.upgrade_selected_tower(owner)
+BuildManager.upgrade_selected_tower_to_max(owner)
+```
+
+升級後會呼叫 `owner.mark_static_layer_dirty()`，讓塔等級標記更新到靜態層。
 
 ## Hover 建造預覽
 
@@ -318,23 +413,38 @@ _unhandled_input()
 func _update_hover_cell() -> void
 ```
 
-流程：
+優化重點：
 
-1. 不是遊戲畫面就清空 hover。
-2. 滑鼠不在建造區就清空 hover。
-3. 設定 `hover_cell`。
-4. 呼叫 `can_place_footprint()` 與 `footprint_has_enemy()`。
-5. 如果初步可建造，模擬加入 `test_blocked`。
-6. 呼叫 `find_path(test_blocked)` 檢查不會堵死路。
-7. 設定 `hover_can_build`。
+- 波次中、遊戲結束、非遊戲畫面直接清空 hover。
+- 記錄 `last_hover_path_cell`。
+- 滑鼠停在同一格時沿用上次結果。
+- 只有換到新格子才複製 `blocked` 並呼叫 `find_path(test_blocked)`。
 
-繪製在 `game_renderer.gd`：
+繪製在：
 
 ```gdscript
-draw_build_preview()
+GameRenderer.draw_build_preview()
 ```
 
-可建造顯示藍色半透明 2x2，不可建造顯示紅色半透明 2x2。
+可建造顯示藍色半透明 `2x2`，不可建造顯示紅色半透明 `2x2`。
+
+觸控模式會額外記錄：
+
+```gdscript
+touch_build_mode
+touch_pending_build_cell
+touch_pending_can_build
+```
+
+當收到 `InputEventScreenTouch` 時：
+
+- 進入觸控建造模式。
+- 設定短暫的滑鼠事件忽略時間，避免同一次觸控被 Web/Godot 轉成模擬滑鼠點擊後立刻建造。
+- 點到既有塔時直接選取塔。
+- 第一次點空地時，顯示半透明 `2x2` 預覽與提示文字。
+- 第二次點同一格且仍可建造時，才真正建造。
+- 第二次點別的格子時，只移動預覽位置。
+- 若該格不可建造，顯示紅色預覽並播放錯誤音。
 
 ## 路徑系統
 
@@ -372,45 +482,47 @@ static func is_diagonal_blocked(current: Vector2i, dir: Vector2i, block_map: Dic
 
 ## 波次與敵人生成
 
-按下 `下一波`：
+開始波次：
 
 ```text
 GameUI 按鈕 signal
 -> main.gd start_wave()
+-> WaveManager.start_wave(self)
 ```
 
-`start_wave()` 流程：
-
-1. 如果 `is_wave_active()` 為 true，不能開始。
-2. 如果已經通過 `FINAL_WAVE`，設定勝利。
-3. `wave += 1`。
-4. 每 10 波設定 Boss。
-5. 設定本波要生成的敵人數量。
-6. 播放提示音。
-7. 設定 `spawn_flash_timer`，讓出生點發光。
-
-每幀生成流程：
+每幀生成：
 
 ```text
 _process()
 -> _update_spawn(game_delta)
--> spawn_enemy(is_boss, enemy_type)
+-> WaveManager.update_spawn(self, delta)
+-> main.gd spawn_enemy(is_boss, enemy_type)
 ```
+
+`WaveManager` 負責：
+
+- 難度名稱
+- 初始金幣
+- 初始生命
+- 敵人血量倍率
+- 敵人速度倍率
+- 擊殺獎勵倍率
+- 拆塔退款倍率
+- 每波敵人數量
+- 出怪批次
+- 出怪間隔
+- Boss 波判斷
+- 敵人種類選擇
 
 `spawn_enemy()` 流程：
 
 1. 呼叫 `find_path(blocked)`。
 2. 如果無路，取消生成。
-3. 設定 `current_path`。
+3. `set_current_path(path)`，路徑真的改變時才重畫靜態層。
 4. 用路徑第一格取得出生座標。
 5. 建立 `Enemy.new(path, start_pos, wave, is_boss, enemy_type, hp_multiplier, speed_multiplier)`。
-6. 加入 `enemies`。
-
-`enemy_type_for_spawn(spawn_index)` 決定一般敵人種類：
-
-- 前期主要是 basic。
-- 中後期會混入 fast 與 tank。
-- Boss 波另外由 `start_wave()` 控制。
+6. 飛行敵人改成出生點直飛終點。
+7. 加入 `enemies`。
 
 ## 敵人系統
 
@@ -420,7 +532,7 @@ _process()
 scripts/enemy.gd
 ```
 
-建立敵人時：
+建立敵人：
 
 ```text
 main.gd spawn_enemy()
@@ -436,17 +548,21 @@ main.gd spawn_enemy()
 - `path`
 - `index`
 - `pos`
+- `facing_dir`
 - `base_speed`
 - `hp`
 - `max_hp`
 - `reward`
 - `is_boss`
+- `is_auditor`
 - `type_id`
 - `name`
 - `body_color`
+- `is_flying`
+- `revive_*`
 - `slow_timer`
-- `slow_factor`
 - `hit_flash_timer`
+- `arrow_damage_taken_multiplier`
 
 主要函式：
 
@@ -455,9 +571,11 @@ func current_speed() -> float
 func apply_hit_flash() -> void
 func apply_slow(factor: float, duration: float) -> void
 func tick_status(delta: float) -> void
+func begin_revive_wait() -> void
+func revive_now() -> void
 ```
 
-敵人移動仍由 `main.gd` 控制：
+敵人移動仍在 `main.gd`：
 
 ```gdscript
 func _update_enemies(delta: float) -> void
@@ -465,12 +583,20 @@ func _update_enemies(delta: float) -> void
 
 流程：
 
-1. 呼叫 `enemy.tick_status(delta)` 更新受擊閃爍與緩速。
-2. 如果抵達終點，扣生命並移除敵人。
-3. 朝 `enemy.path[enemy.index + 1]` 的中心點移動。
-4. 生命小於等於 0 時給玩家金幣。
-5. 如果死亡的是 Boss，更新排行榜。
-6. 第 50 波結束且敵人清空後設定 `game_won = true`。
+1. 呼叫 `enemy.tick_status(delta)` 更新復活、無敵、受擊閃爍、緩速。
+2. 墓碑等待復活時跳過移動。
+3. 死亡時進入 `_handle_defeated_enemy(...)`。
+4. 抵達終點時扣生命並移除。
+5. 朝下一個路徑點中心移動。
+6. 更新 `facing_dir`，讓敵人可朝 8 方向轉向。
+
+Boss 規則：
+
+- 第 10 波：蟻后。
+- 第 20 波：聖甲蟲，血量在原本 Boss 數值上再加倍。
+- 第 30 波：蟑螂將軍，血量再加倍。
+- 第 40 波：蜘蛛女皇，血量再加倍，並套用蜘蛛墓碑復活。
+- 第 50 波：昆蟲魔王，血量再加倍。
 
 ## 塔系統
 
@@ -480,10 +606,10 @@ func _update_enemies(delta: float) -> void
 scripts/tower.gd
 ```
 
-建立塔時：
+建立塔：
 
 ```text
-main.gd try_build_or_select()
+BuildManager.try_build_or_select()
 -> Tower.new(cell, selected_build_type)
 -> tower.gd _init(...)
 -> tower.gd _apply_stats()
@@ -491,17 +617,17 @@ main.gd try_build_or_select()
 -> data/towers.json
 ```
 
-讀檔時：
+讀檔：
 
 ```text
 main.gd load_saved_game()
 -> Tower.new(tower_cell, saved_type, saved_level)
 ```
 
-升級時：
+升級：
 
 ```text
-main.gd upgrade_selected_tower()
+BuildManager.upgrade_selected_tower()
 -> selected_tower.upgrade()
 -> tower.gd _apply_stats()
 ```
@@ -522,6 +648,7 @@ main.gd upgrade_selected_tower()
 - `slow_factor`
 - `slow_duration`
 - `color`
+- `aim_dir`
 
 主要函式：
 
@@ -531,86 +658,141 @@ func upgrade() -> void
 func _apply_stats() -> void
 ```
 
-塔攻擊仍由 `main.gd` 控制：
+## 戰鬥、目標搜尋與子彈
 
-```gdscript
-func _update_towers(delta: float) -> void
+戰鬥邏輯在：
+
+```text
+scripts/combat_manager.gd
+```
+
+塔攻擊：
+
+```text
+main.gd _update_towers(delta)
+-> CombatManager.update_towers(self, delta)
 ```
 
 流程：
 
 1. 每座塔扣 `cooldown`。
 2. 冷卻未結束就跳過。
-3. 呼叫 `enemies_for_tower(tower)` 找目標。
-4. 對每個目標建立 `Projectile.new(tower_center(tower), target, tower)`。
-5. 重設 `tower.cooldown = tower.fire_rate`。
-6. 呼叫 `play_tower_sound(tower.type_id)`。
+3. `enemies_for_tower(owner, tower)` 找目標。
+4. 更新 `tower.aim_dir`，讓砲管/箭臂追蹤目標。
+5. 對每個目標建立 `Projectile.new(...)`。
+6. 重設 `tower.cooldown = tower.fire_rate`。
+7. 呼叫 `owner.play_tower_sound(tower.type_id)`。
 
-目標選擇：
+目標搜尋：
 
 ```gdscript
-func enemies_for_tower(tower: Tower) -> Array[Enemy]
+CombatManager.enemies_for_tower(owner, tower)
 ```
 
-目前會找射程內敵人，並依路徑進度排序，優先攻擊較接近終點的敵人。
+目前規則：
 
-## 子彈與傷害
-
-子彈物件在：
-
-```text
-scripts/projectile.gd
-```
-
-建立子彈時：
-
-```text
-main.gd _update_towers()
--> Projectile.new(tower_center, target, tower)
--> projectile.gd _init(...)
-```
-
-`projectile.gd` 從來源塔複製：
-
-- `damage`
-- `tower_type`
-- `splash_radius`
-- `slow_factor`
-- `slow_duration`
-- `color`
+- 只找射程內敵人。
+- 砲塔不能攻擊飛行敵人。
+- 不能攻擊無敵、墓碑等待復活中的敵人。
+- 依路徑進度排序，優先攻擊較接近終點的敵人。
+- 依 `tower.target_count` 回傳多目標。
 
 子彈移動：
 
-```gdscript
-func _update_projectiles(delta: float) -> void
+```text
+main.gd _update_projectiles(delta)
+-> CombatManager.update_projectiles(self, delta)
 ```
-
-流程：
-
-1. 如果目標敵人已不存在，移除子彈。
-2. 朝目標敵人位置移動。
-3. 距離足夠近時呼叫 `_apply_projectile_hit(projectile)`。
-4. 移除命中的子彈。
 
 命中處理：
 
 ```gdscript
-func _apply_projectile_hit(projectile: Projectile) -> void
+CombatManager.apply_projectile_hit(owner, projectile)
 ```
 
 砲塔：
 
-- 如果有 `splash_radius`，對範圍內敵人造成濺射傷害。
+- 如果有 `splash_radius`，對範圍內地面敵人造成濺射傷害。
+- 高負載時仍完整計算傷害，但只顯示少量命中特效。
 
 箭塔：
 
 - 單體高攻速。
 - 高等級後 `target_count` 增加，因此一次可建立多個子彈。
+- 對獨角仙有傷害抗性，透過 `arrow_damage_taken_multiplier` 套用。
 
 冰凍塔：
 
 - 命中後造成傷害。
 - 呼叫 `enemy.apply_slow(projectile.slow_factor, projectile.slow_duration)`。
+
+## 音效與音樂
+
+音訊建立在：
+
+```text
+scripts/audio_manager.gd
+```
+
+調用：
+
+```text
+main.gd _build_audio()
+-> AudioManager.build(self)
+```
+
+內容：
+
+- 砲塔音效
+- 箭塔音效
+- 冰凍塔音效
+- 下一波戰鼓
+- 錯誤提示
+- 建造音效
+- 拆除音效
+- 程式生成背景音樂 loop
+
+音量套用：
+
+```text
+GameUI 音樂/音效 checkbox 或 slider
+-> owner._apply_audio_settings()
+-> AudioManager.apply_settings(self)
+```
+
+## 特效與提示文字
+
+目前特效資料仍保存在 `main.gd`：
+
+- `floating_texts`
+- `impact_waves`
+
+新增飄字：
+
+```gdscript
+add_floating_text(pos, text, color)
+```
+
+新增命中衝擊波：
+
+```gdscript
+add_impact_wave(pos, color, direction)
+```
+
+更新：
+
+```gdscript
+_update_floating_texts(delta)
+```
+
+繪製：
+
+```gdscript
+GameRenderer.draw_floating_texts()
+GameRenderer.draw_impact_waves()
+```
+
+高負載時 `add_impact_wave()` 會限制數量並抽樣顯示，避免砲塔濺射造成大量衝擊波堆積。
 
 ## 數值資料化
 
@@ -643,25 +825,24 @@ static func tower_name(type_id: String) -> String
 static func tower_cost(type_id: String) -> int
 ```
 
-調用關係：
-
-- `tower.gd` 使用 `GameData.tower(type_id)` 套用塔數值。
-- `enemy.gd` 使用 `GameData.enemy_base()` 與 `GameData.enemy(type_id)` 套用敵人數值。
-- Boss 使用 `GameData.boss()`。
-- `main.gd` 的 `tower_cost()` / `tower_name()` 轉呼叫 `GameData`。
-- `game_ui.gd` 的塔按鈕文字也從 `GameData` 讀價格與名稱。
-
 調平衡時優先改 JSON：
 
 - 塔價格：`data/towers.json` 的 `cost`
 - 塔傷害：`damage`、`damage_per_level`
 - 塔射程：`range`、`range_per_level`
 - 塔攻速：`fire_rate`、`fire_rate_per_level`、`min_fire_rate`
+- 塔目標數：`target_count`、`target_count_bonus_levels`
 - 敵人血量：`data/enemies.json` 的 `hp`、`hp_per_wave`、`hp_multiplier`
 - 敵人速度：`speed`、`speed_per_wave`、`speed_multiplier`
 - 敵人獎勵：`reward`、`reward_per_wave`、`reward_bonus`
 
 ## 存檔與排行榜
+
+存檔邏輯在：
+
+```text
+scripts/save_manager.gd
+```
 
 路徑：
 
@@ -673,10 +854,11 @@ const META_PATH := "user://path_bender_meta.json"
 重要函式：
 
 ```gdscript
-func save_game() -> void
-func _load_meta_data() -> void
-func _read_json_file(path: String) -> Dictionary
-func _save_meta_data() -> void
+SaveManager.build_save_data(owner)
+SaveManager.save_game_data(data)
+SaveManager.apply_loaded_data(owner)
+SaveManager.save_meta_data(difficulty_id, boss_leaderboard)
+SaveManager.read_json_file(path)
 ```
 
 `SAVE_PATH` 保存：
@@ -686,53 +868,26 @@ func _save_meta_data() -> void
 - 生命
 - 波數
 - 塔的位置、類型與等級
-- Boss 排行榜
-
-讀檔時 `load_saved_game()` 會：
-
-1. 清空目前遊戲狀態。
-2. 還原難度、金幣、生命、波數。
-3. 逐筆建立 `Tower.new(...)`。
-4. 重建 `blocked`。
-5. 呼叫 `find_path(blocked)`。
-6. 切到遊戲畫面。
+- 排行榜
 
 `META_PATH` 保存：
 
 - 難度
-- Boss 排行榜
+- 攻擊量排行榜
 
-## Git 與 Web 部署
+第 50 波後攻擊量審查員會記錄：
 
-目前專案已納入 Git：
+- 承受總傷害
+- 通過耗時
+- 難度
 
-- commit：`70a2c00 Add Godot tower defense project`
-- commit：`6c6d32b Prepare web deployment and font support`
-- GitHub repository：`https://github.com/lowlow33323-hub/TD_2026.git`
-- 追蹤範圍：`tower_defense_godot/`
-- 已排除：
-  - `.DS_Store`
-  - Godot `.godot/` 快取
-  - Netlify 本地資料 `.netlify/`
-  - Web build 輸出 `builds/`
-  - 舊副本 `path-bender-tower-defense-(4.4)/`
+## Web 部署與載入
 
-Web 匯出設定：
+目前專案已連到 GitHub：
 
-- 檔案：`export_presets.cfg`
-- preset：`Web`
-- 輸出目錄：`builds/web/`
-- 輸出入口：`builds/web/index.html`
-- 已安裝官方 Godot `4.6.3` Web export templates。
-
-Netlify 測試部署：
-
-- 首次匿名部署：
-  - `https://hilarious-panda-60a585.netlify.app`
-  - 密碼：`My-Drop-Site`
-- 修正中文字型後重新部署：
-  - `https://frabjous-dragon-091bbc.netlify.app`
-  - 密碼：`My-Drop-Site`
+```text
+https://github.com/lowlow33323-hub/TD_2026.git
+```
 
 Netlify GitHub 自動部署：
 
@@ -740,93 +895,124 @@ Netlify GitHub 自動部署：
 - 專案 base：`tower_defense_godot`
 - build command：`../scripts/netlify_build.sh`
 - publish 目錄：`tower_defense_godot/builds/web`
-- build 腳本會在 Netlify 環境下載官方 Godot `4.6.3` 與 export templates，再匯出 Web 版。
+- build 腳本會下載官方 Godot `4.6.3` 與 export templates，再匯出 Web 版。
 
-注意：
+Web 載入優化：
 
-- 匿名 Netlify deploy 需要在 60 分鐘內 claim，否則不適合當正式網址。
-- 之後更新流程：
-  1. 修改 Godot 專案。
-  2. 更新版本號與 `CHANGELOG.md`。
-  3. commit 並 push 到 GitHub。
-  4. Netlify 會自動拉取 GitHub 最新 commit、匯出 Web 版並重新部署。
+- `index.html` 不長快取，確保玩家會拿到最新入口。
+- `.wasm`、`.pck`、`td-*` 版本化資源設定長快取。
+- build 後將核心資源改名為：
+  - `td-<hash>.js`
+  - `td-<hash>.wasm`
+  - `td-<hash>.pck`
+  - `td-<hash>.audio.worklet.js`
+  - `td-<hash>.audio.position.worklet.js`
+- build 後產生 `.gz`。
+- 若環境支援 `brotli`，也產生 `.br`。
+- 中文字型使用遊戲用字子集，從約 `11MB` 降到約 `217KB`。
+
+更新流程：
+
+1. 修改 Godot 專案。
+2. 更新 `GAME_VERSION` 與 `CHANGELOG.md`。
+3. 本地測試。
+4. commit 並 push 到 GitHub。
+5. Netlify 自動 build 與部署。
 
 ## 重要函式速查
 
-| 函式 | 位置 | 用途 |
+| 函式 / 模組 | 位置 | 用途 |
 |---|---|---|
-| `_ready()` | `main.gd` | 初始化音效、UI、存檔與主選單 |
-| `_process()` | `main.gd` | 每幀更新遊戲邏輯 |
-| `_unhandled_input()` | `main.gd` | 處理滑鼠與鍵盤輸入 |
-| `_update_layout()` | `main.gd` | wrapper，呼叫 `GameUI.update_layout()` |
-| `show_screen()` | `main.gd` | wrapper，呼叫 `GameUI.show_screen()` |
-| `try_build_or_select()` | `main.gd` | 建塔或選取塔 |
-| `find_path()` | `main.gd` | wrapper，呼叫 `Pathfinder.find_path()` |
-| `find_path_from()` | `main.gd` | wrapper，呼叫 `Pathfinder.find_path_from()` |
-| `start_wave()` | `main.gd` | 開始下一波 |
-| `_update_spawn()` | `main.gd` | 控制敵人生成 |
+| `_ready()` | `main.gd` | 初始化靜態層、UI、音效、存檔與主選單 |
+| `_process()` | `main.gd` | 每幀流程協調 |
+| `_unhandled_input()` | `main.gd` | 滑鼠與鍵盤輸入 |
+| `_update_enemies()` | `main.gd` | 敵人移動、抵達出口、死亡檢查 |
 | `spawn_enemy()` | `main.gd` | 建立敵人物件 |
-| `_update_enemies()` | `main.gd` | 移動敵人與處理死亡/抵達出口 |
-| `_update_towers()` | `main.gd` | 控制塔攻擊 |
-| `_update_projectiles()` | `main.gd` | 控制子彈移動 |
-| `_apply_projectile_hit()` | `main.gd` | 處理子彈命中效果 |
-| `save_game()` | `main.gd` | 存檔 |
-| `_update_ui()` | `main.gd` | wrapper，呼叫 `GameUI.update()` |
-| `_draw()` | `main.gd` | wrapper，呼叫 `GameRenderer.render()` |
-| `render()` | `game_renderer.gd` | 主繪圖入口 |
-| `build()` | `game_ui.gd` | 建立 UI |
-| `connect_buttons()` | `game_ui.gd` | 連接 UI 按鈕 |
-| `tower()` | `game_data.gd` | 讀塔資料 |
-| `enemy()` | `game_data.gd` | 讀敵人資料 |
+| `render_state()` | `main.gd` | 組裝 renderer 需要的狀態 |
+| `GameUI.build()` | `game_ui.gd` | 建立 UI |
+| `GameUI.update()` | `game_ui.gd` | 更新 HUD 與按鈕狀態 |
+| `GameRenderer.render_static()` | `game_renderer.gd` | 靜態層繪製 |
+| `GameRenderer.render_dynamic()` | `game_renderer.gd` | 動態層繪製 |
+| `Pathfinder.find_path()` | `pathfinder.gd` | 完整路徑搜尋 |
+| `WaveManager.update_spawn()` | `wave_manager.gd` | 出怪節奏 |
+| `BuildManager.try_build_or_select()` | `build_manager.gd` | 建塔或選塔 |
+| `BuildManager.remove_tower()` | `build_manager.gd` | 拆塔與退款 |
+| `CombatManager.update_towers()` | `combat_manager.gd` | 塔攻擊 |
+| `CombatManager.update_projectiles()` | `combat_manager.gd` | 子彈移動與命中 |
+| `AudioManager.build()` | `audio_manager.gd` | 建立音效與音樂 |
+| `DialogManager.popup_confirmation()` | `dialog_manager.gd` | 自製確認視窗 |
+| `SaveManager.apply_loaded_data()` | `save_manager.gd` | 讀取 meta |
+| `GameData.tower()` | `game_data.gd` | 讀塔資料 |
+| `GameData.enemy()` | `game_data.gd` | 讀敵人資料 |
 
 ## 後續開發定位
-
-## 後期版本更新要點
-
-### Web 版效能優化
-
-- 分層繪製：
-  - 將背景格線、塔佔用地板、敵人路徑等不常變動的畫面拆成快取層。
-  - 每幀只重畫敵人、子彈、衝擊波、浮動文字等動態元素。
-  - 目標是降低 Godot Web 版每幀繪製成本，改善 Safari 或低效能裝置的鈍挫感。
-- 降低特效負擔：
-  - 控制同時存在的衝擊波、浮動文字、路徑透明疊色與其他短效動畫數量。
-  - 必要時增加 Web 版專用特效等級，例如 `低 / 中 / 高`。
-- 字型瘦身：
-  - 目前 Web 版已內嵌 `Noto Sans TC` 修正中文字亂碼，但完整中文字型檔較大。
-  - 後續可製作只包含遊戲用字的子集字型，降低首次載入大小。
 
 想改畫面精細度：
 
 - 優先看 `scripts/game_renderer.gd`。
+- 塔底座、路徑、格線屬於靜態層。
+- 敵人、砲管、箭臂、子彈、特效屬於動態層。
 
 想改塔造型：
 
-- `draw_cannon_tower()`
-- `draw_arrow_tower()`
-- `draw_ice_tower()`
+- 靜態底座：`draw_cannon_base()`、`draw_arrow_base()`、`draw_ice_tower()`
+- 動態旋轉：`draw_cannon_aimer()`、`draw_arrow_aimer()`
+- 等級標記：`draw_tower_level_marker()`
 
-想改子彈特效：
+想改敵人外觀：
 
-- `draw_projectiles()`
-- 必要時再改 `scripts/projectile.gd`。
+- `draw_enemy_body()`
+- `draw_simple_enemy_body()`
+- `draw_ant_enemy()`
+- `draw_roach_enemy()`
+- `draw_beetle_enemy()`
+- `draw_spider_enemy()`
+- `draw_locust_enemy()`
+- `draw_boss_enemy()`
+
+想改子彈與命中：
+
+- 視覺：`game_renderer.gd` 的 `draw_projectiles()`、`draw_impact_waves()`
+- 邏輯：`combat_manager.gd` 的 `update_projectiles()`、`apply_projectile_hit()`
+
+想改建造規則：
+
+- 優先看 `build_manager.gd`。
+- footprint / 座標工具仍在 `main.gd`。
+
+想改波次與難度：
+
+- 優先看 `wave_manager.gd`。
+- 單位數值優先改 `data/towers.json` 與 `data/enemies.json`。
 
 想增加敵人種類：
 
 1. 在 `game_defs.gd` 加敵人類型常數。
 2. 在 `data/enemies.json` 加敵人資料。
-3. 在 `main.gd` 的 `enemy_type_for_spawn()` 安排出現規則。
-4. 在 `game_renderer.gd` 視需要調整外觀。
+3. 在 `wave_manager.gd` 的 `enemy_type_for_spawn()` 安排出現規則。
+4. 在 `game_renderer.gd` 增加或調整外觀。
 
 想增加塔種類：
 
 1. 在 `game_defs.gd` 加塔類型常數。
 2. 在 `data/towers.json` 加塔資料。
 3. 在 `game_ui.gd` 加按鈕與 signal。
-4. 在 `game_renderer.gd` 加繪製函式。
-5. 在 `main.gd` 的輸入與選塔流程加入新類型。
+4. 在 `build_manager.gd` / `combat_manager.gd` 視需要加入特殊規則。
+5. 在 `game_renderer.gd` 加靜態底座與動態攻擊外觀。
 
-想調整難度：
+## 下次專案前期規劃
 
-- 優先改 `main.gd` 的 `starting_gold()`、`starting_lives()`、`enemy_hp_multiplier()`、`enemy_speed_multiplier()`。
-- 若是單位數值，優先改 `data/towers.json` 與 `data/enemies.json`。
+更完整的經驗整理在：
+
+```text
+docs/NEXT_PROJECT_CHECKLIST.md
+```
+
+核心原則：
+
+- 先分靜態層、動態層、特效層、UI 層。
+- 先做高負載低畫質模式。
+- UI 不要每幀重刷。
+- Hover 和 pathfinding 要快取。
+- 戰鬥、建造、UI、渲染、波次、存檔、音效、對話框都應早拆檔。
+- Web 中文字型、快取、壓縮、Netlify 自動部署要前期規劃。

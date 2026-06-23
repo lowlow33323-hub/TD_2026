@@ -2,6 +2,28 @@
 
 本文記錄目前專案的重要修改，方便之後回頭查「改了什麼、為什麼改」。
 
+## Beta 0.6.8 - 觸控雙擊建造
+
+- 版本號從 `Beta 0.6.7` 更新為 `Beta 0.6.8`。
+- 新增觸控建造模式，收到 `InputEventScreenTouch` 後，第一次點空地只顯示半透明 `2x2` 預覽。
+- 觸控模式第二次點同一格且可建造時，才真正建造塔，降低手機端肥手指誤蓋問題。
+- 觸控模式點到已有塔時仍直接選取塔，保留快速操作。
+- 觸控後會短暫忽略模擬滑鼠點擊，避免同一次觸控被重複處理。
+- 不可建造位置會顯示紅色預覽並播放錯誤提示音。
+- 新增 `BuildManager.validate_build()`，集中建造合法性檢查，讓滑鼠建造、觸控預覽與真正建造共用同一套規則。
+- 更新 `README.md`、`docs/GAME_LOGIC.md` 與 `docs/ROADMAP.md` 的版本與觸控操作說明。
+
+## 文件更新 - 接手維護文件
+
+- 新增 `docs/ONBOARDING.md`，整理本地執行、測試、部署、常見修改位置與接手流程。
+- 新增 `docs/DATA_SCHEMA.md`，說明 `data/towers.json` 與 `data/enemies.json` 欄位用途。
+- 新增 `docs/ARCHITECTURE_DECISIONS.md`，記錄 manager 拆分、資料化、Web 字型、分層繪製、高負載低畫質與 Netlify 自動部署等架構決策。
+- 新增 `docs/PERFORMANCE_GUIDE.md`，整理後期大量敵人、子彈、特效與 Web 載入速度的效能規則。
+- 新增 `docs/ROADMAP.md`，整理近期、下一階段、長期方向與暫緩項目。
+- 補強 `docs/ARCHITECTURE_DECISIONS.md`，加入 ADR 狀態、影響檔案與後續維護決策。
+- 更新 `docs/GAME_LOGIC.md` 的維護文件索引。
+- 更新 `README.md` 中過期的版本、建造區大小、快捷鍵、排行榜與主要檔案資訊。
+
 ## Beta 0.6.7 - 拆出音效與對話視窗管理器
 
 - 版本號從 `Beta 0.6.6` 更新為 `Beta 0.6.7`。

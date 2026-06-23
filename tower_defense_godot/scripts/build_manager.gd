@@ -5,6 +5,29 @@ const Tower = preload("res://scripts/tower.gd")
 const WaveManager = preload("res://scripts/wave_manager.gd")
 
 
+static func validate_build(owner, cell: Vector2i) -> Dictionary:
+	if owner.is_wave_active():
+		return {"ok": false, "message": "進攻波進行中，不能建造新塔。"}
+
+	if not owner.can_place_footprint(cell):
+		return {"ok": false, "message": "2x2 塔需要完整空地，且不能覆蓋入口或出口。"}
+
+	var build_cost: int = owner.tower_cost(owner.selected_build_type)
+	if owner.gold < build_cost:
+		return {"ok": false, "message": "金幣不足，無法建造 %s。" % owner.tower_name(owner.selected_build_type)}
+	if owner.footprint_has_enemy(cell):
+		return {"ok": false, "message": "敵人正在建造範圍內，不能直接建塔。"}
+
+	var test_blocked: Dictionary = owner.blocked.duplicate()
+	for footprint_cell in owner.footprint_cells(cell):
+		test_blocked[footprint_cell] = true
+	var new_path: Array[Vector2i] = owner.find_path(test_blocked)
+	if new_path.is_empty():
+		return {"ok": false, "message": "不能完全阻擋敵人的路線。"}
+
+	return {"ok": true, "path": new_path}
+
+
 static func try_build_or_select(owner, cell: Vector2i) -> void:
 	var existing = owner.tower_at(cell)
 	if existing != null:
@@ -13,36 +36,18 @@ static func try_build_or_select(owner, cell: Vector2i) -> void:
 		return
 
 	owner.selected_tower = null
-	if owner.is_wave_active():
-		owner.reject_build("進攻波進行中，不能建造新塔。")
-		return
-
-	if not owner.can_place_footprint(cell):
-		owner.reject_build("2x2 塔需要完整空地，且不能覆蓋入口或出口。")
+	var build_check := validate_build(owner, cell)
+	if not bool(build_check["ok"]):
+		owner.reject_build(String(build_check["message"]))
 		return
 
 	var build_cost: int = owner.tower_cost(owner.selected_build_type)
-	if owner.gold < build_cost:
-		owner.reject_build("金幣不足，無法建造 %s。" % owner.tower_name(owner.selected_build_type))
-		return
-	if owner.footprint_has_enemy(cell):
-		owner.reject_build("敵人正在建造範圍內，不能直接建塔。")
-		return
-
-	var test_blocked: Dictionary = owner.blocked.duplicate()
-	for footprint_cell in owner.footprint_cells(cell):
-		test_blocked[footprint_cell] = true
-	var new_path: Array[Vector2i] = owner.find_path(test_blocked)
-	if new_path.is_empty():
-		owner.reject_build("不能完全阻擋敵人的路線。")
-		return
-
 	var tower := Tower.new(cell, owner.selected_build_type)
 	for footprint_cell in owner.footprint_cells(cell):
 		owner.blocked[footprint_cell] = tower
 	owner.towers.append(tower)
 	owner.selected_tower = tower
-	owner.set_current_path(new_path)
+	owner.set_current_path(build_check["path"])
 	owner.gold -= build_cost
 	owner.build_audio.play()
 	owner.retarget_live_enemies()

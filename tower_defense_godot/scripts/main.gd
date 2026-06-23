@@ -17,6 +17,7 @@ const DialogManager = preload("res://scripts/dialog_manager.gd")
 const StaticBoardLayer = preload("res://scripts/static_board_layer.gd")
 const GameFont = preload("res://fonts/NotoSansTC-Regular.ttf")
 
+const INVALID_CELL := Vector2i(-999, -999)
 const MAX_IMPACT_WAVES_NORMAL := 28
 const MAX_IMPACT_WAVES_BUSY := 14
 const BUSY_VISUAL_LOAD := 130
@@ -53,7 +54,7 @@ var message := "按 1/2/3 或點選按鈕選塔。左鍵建造或選取，U 升�
 var message_time := 4.0
 var saved_game_data: Dictionary = {}
 var has_saved_game := false
-var hover_cell := Vector2i(-999, -999)
+var hover_cell := INVALID_CELL
 var hover_can_build := false
 var spawn_flash_timer := 0.0
 var wave_banner_timer := 0.0
@@ -67,6 +68,10 @@ var sfx_enabled := true
 var music_volume := 1.0
 var sfx_volume := 1.0
 var confirmation_dialog_open := false
+var touch_build_mode := false
+var touch_pending_build_cell := INVALID_CELL
+var touch_pending_can_build := false
+var touch_mouse_suppress_until_msec := 0
 
 var cell_size := 24.0
 var grid_origin := Vector2.ZERO
@@ -75,7 +80,7 @@ var ui_scale := 1.0
 var last_viewport_size := Vector2.ZERO
 var static_layer_signature := ""
 var ui_update_signature := ""
-var last_hover_path_cell := Vector2i(-999, -999)
+var last_hover_path_cell := INVALID_CELL
 var last_hover_path_result := false
 
 @onready var static_board_layer: Node2D = StaticBoardLayer.new()
@@ -273,20 +278,34 @@ func _reset_game_state() -> void:
 	spawn_flash_timer = 0.0
 	wave_banner_timer = 0.0
 	life_flash_timer = 0.0
+	clear_touch_build_preview()
 	set_current_path(find_path(blocked))
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if current_screen != Defs.SCREEN_GAME or lives <= 0 or game_won:
 		return
+	if event is InputEventScreenTouch and event.pressed:
+		touch_mouse_suppress_until_msec = Time.get_ticks_msec() + 350
+		var touch_cell := world_to_cell(event_position_to_world(event.position))
+		handle_touch_primary_action(touch_cell)
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventMouseButton and event.pressed:
+		if Time.get_ticks_msec() < touch_mouse_suppress_until_msec:
+			get_viewport().set_input_as_handled()
+			return
+		touch_build_mode = false
 		var cell := world_to_cell(get_global_mouse_position())
 		if not is_inside_grid(cell):
 			selected_tower = null
+			clear_touch_build_preview()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
+			clear_touch_build_preview()
 			try_build_or_select(cell)
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			clear_touch_build_preview()
 			remove_tower(cell)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
@@ -343,6 +362,7 @@ func enemy_speed_multiplier() -> float:
 
 func select_build_type(type_id: String) -> void:
 	selected_build_type = type_id
+	clear_touch_build_preview()
 	show_message("已選擇建造：%s。" % tower_name(type_id))
 
 
@@ -380,6 +400,48 @@ func toggle_auto_start() -> void:
 
 func try_build_or_select(cell: Vector2i) -> void:
 	BuildManager.try_build_or_select(self, cell)
+
+
+func handle_touch_primary_action(cell: Vector2i) -> void:
+	touch_build_mode = true
+	if not is_inside_grid(cell):
+		selected_tower = null
+		clear_touch_build_preview()
+		return
+
+	var existing := tower_at(cell)
+	if existing != null:
+		selected_tower = existing
+		clear_touch_build_preview()
+		show_message("已選取 %s。按 U 可升級。" % existing.name)
+		return
+
+	if touch_pending_build_cell == cell and touch_pending_can_build:
+		clear_touch_build_preview()
+		try_build_or_select(cell)
+		return
+
+	var build_check := BuildManager.validate_build(self, cell)
+	touch_pending_build_cell = cell
+	touch_pending_can_build = bool(build_check["ok"])
+	hover_cell = cell
+	hover_can_build = touch_pending_can_build
+	last_hover_path_cell = INVALID_CELL
+	if touch_pending_can_build:
+		selected_tower = null
+		show_message("再次點擊此位置建造%s。" % tower_name(selected_build_type))
+	else:
+		reject_build(String(build_check["message"]))
+	queue_redraw()
+
+
+func clear_touch_build_preview() -> void:
+	touch_pending_build_cell = INVALID_CELL
+	touch_pending_can_build = false
+	if touch_build_mode:
+		hover_cell = INVALID_CELL
+		hover_can_build = false
+		last_hover_path_cell = INVALID_CELL
 
 
 func remove_tower(cell: Vector2i) -> void:
@@ -435,27 +497,27 @@ func start_damage_audit() -> void:
 
 func _update_hover_cell() -> void:
 	if current_screen != Defs.SCREEN_GAME or is_wave_active() or lives <= 0 or game_won:
-		hover_cell = Vector2i(-999, -999)
+		hover_cell = INVALID_CELL
 		hover_can_build = false
-		last_hover_path_cell = Vector2i(-999, -999)
+		last_hover_path_cell = INVALID_CELL
+		clear_touch_build_preview()
+		return
+	if touch_build_mode:
+		hover_cell = touch_pending_build_cell
+		hover_can_build = touch_pending_build_cell != INVALID_CELL and touch_pending_can_build
 		return
 	var mouse_cell := world_to_cell(get_global_mouse_position())
 	if not is_inside_grid(mouse_cell):
-		hover_cell = Vector2i(-999, -999)
+		hover_cell = INVALID_CELL
 		hover_can_build = false
-		last_hover_path_cell = Vector2i(-999, -999)
+		last_hover_path_cell = INVALID_CELL
 		return
 	hover_cell = mouse_cell
 	if hover_cell == last_hover_path_cell:
 		hover_can_build = last_hover_path_result and not footprint_has_enemy(hover_cell)
 		return
 	last_hover_path_cell = hover_cell
-	hover_can_build = can_place_footprint(hover_cell) and not footprint_has_enemy(hover_cell)
-	if hover_can_build:
-		var test_blocked := blocked.duplicate()
-		for footprint_cell in footprint_cells(hover_cell):
-			test_blocked[footprint_cell] = true
-		hover_can_build = not find_path(test_blocked).is_empty()
+	hover_can_build = bool(BuildManager.validate_build(self, hover_cell)["ok"])
 	last_hover_path_result = hover_can_build
 
 
@@ -655,6 +717,10 @@ func world_to_cell(pos: Vector2) -> Vector2i:
 	return Vector2i(floori(local.x / cell_size), floori(local.y / cell_size))
 
 
+func event_position_to_world(pos: Vector2) -> Vector2:
+	return get_canvas_transform().affine_inverse() * pos
+
+
 func cell_center(cell: Vector2i) -> Vector2:
 	return grid_origin + Vector2(cell.x * cell_size + cell_size * 0.5, cell.y * cell_size + cell_size * 0.5)
 
@@ -767,7 +833,7 @@ func _update_ui() -> void:
 
 func mark_static_layer_dirty() -> void:
 	static_layer_signature = ""
-	last_hover_path_cell = Vector2i(-999, -999)
+	last_hover_path_cell = INVALID_CELL
 	if is_instance_valid(static_board_layer):
 		static_board_layer.queue_redraw()
 

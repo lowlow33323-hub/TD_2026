@@ -334,7 +334,7 @@ static func _build_rules_panel(owner) -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 12)
 	owner.rules_panel.add_child(box)
-	owner.rules_label.text = "操作規則\n\n1/2/3 或按鈕選塔。\n左鍵/觸控：建造或選取塔。\n右鍵：拆除塔。\nU：升級選取塔。\n下一波：開始敵人進攻。\n\n塔現在佔地 2x2。建造前會重新計算路徑，若入口到出口被完全堵死，系統會拒絕建造。\n\n進攻波進行中不能建造新塔，可以調整速度、存檔或回主選單。"
+	owner.rules_label.text = "操作規則\n\n1/2/3 或按鈕選塔。\n左鍵：建造或選取塔。\n觸控：第一次點空地顯示預覽，第二次點同一格建造。\n右鍵：拆除塔。\nU：升級選取塔。\n下一波：開始敵人進攻。\n\n塔現在佔地 2x2。建造前會重新計算路徑，若入口到出口被完全堵死，系統會拒絕建造。\n\n進攻波進行中不能建造新塔，可以調整速度、存檔或回主選單。"
 	owner.rules_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	owner.rules_label.add_theme_font_size_override("font_size", 18)
 	owner.rules_label.add_theme_color_override("font_color", Color("#dde8ff"))

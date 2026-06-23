@@ -1,8 +1,18 @@
 # Path Bender Tower Defense
 
-Godot 4 prototype for a side-to-side tower defense game.
+Godot 4.6.3 prototype for a side-to-side tower defense game.
 
-Current version: `Beta 0.3.1`
+Current version: `Beta 0.6.8`
+
+## 維護文件
+
+- `docs/ONBOARDING.md`：接手、執行、測試、部署指南。
+- `docs/GAME_LOGIC.md`：主要遊戲流程與 `.gd` 檔案調用關係。
+- `docs/DATA_SCHEMA.md`：塔與敵人資料表欄位規格。
+- `docs/PERFORMANCE_GUIDE.md`：Web 版與後期效能規則。
+- `docs/ARCHITECTURE_DECISIONS.md`：重要架構決策紀錄。
+- `docs/ROADMAP.md`：後續開發階段、完成標準與暫緩項目。
+- `docs/CHANGELOG.md`：版本修改紀錄。
 
 ## 畫面與頁面
 
@@ -15,9 +25,15 @@ Current version: `Beta 0.3.1`
 - 按 `1` 或點 `砲塔`：選擇砲塔。
 - 按 `2` 或點 `箭塔`：選擇箭塔。
 - 按 `3` 或點 `冰凍塔`：選擇冰凍塔。
-- 左鍵/觸控空格：建造目前選擇的塔。
+- 按 `N`：開始下一波。
+- 左鍵空格：直接建造目前選擇的塔。
+- 手機/觸控：第一次點空地顯示半透明預覽，第二次點同一格才建造。
 - 左鍵已有塔：選取該塔。
 - 按 `U`：升級選取的塔。
+- 按 `I`：嘗試將選取塔升到最高等。
+- 按 `D` / `S`：加快或降低遊戲速度。
+- 按 `R`：切換敵人路徑顯示。
+- 按 `A`：切換自動開始。
 - 右鍵已有塔：拆除該塔。
 - 點 `下一波`：開始產生敵人。
 - 遊戲中 UI 提供：`存檔`、`回主選單`、`退出`。
@@ -33,7 +49,7 @@ Current version: `Beta 0.3.1`
 ## 規則
 
 - 敵人從左側進入，往右側出口前進。
-- 建造區目前為 `30x20` 格。
+- 建造區目前為 `45x25` 格。
 - 塔佔地為 `2x2` 格，所以建塔會更明顯地改變敵人路線。
 - 滑鼠移到建造區會顯示半透明的 2x2 建造預覽。
 - 如果建塔會完全堵住入口到出口，系統會拒絕建造。
@@ -42,10 +58,15 @@ Current version: `Beta 0.3.1`
 - 敵人會隨波數提高生命與速度。
 - 每 10 波是 Boss 關，只會出現一隻巨大 Boss，不會出現小怪。
 - 第 50 波是最後一波，通過後遊戲勝利。
-- Boss 擊倒會記錄耗時秒數，HUD 會顯示最快 5 筆排行榜。
+- 第 50 波後會出現攻擊量審查員，排行榜記錄承受攻擊量與耗時。
 
 ## 主要檔案
 
 - `project.godot` opens the project.
 - `scenes/main.tscn` is the launch scene.
-- `scripts/main.gd` contains the game logic.
+- `scripts/main.gd` coordinates the game flow.
+- `scripts/game_ui.gd` builds and updates UI.
+- `scripts/game_renderer.gd` draws the board, towers, enemies, projectiles and effects.
+- `scripts/combat_manager.gd` handles tower attacks and projectile hits.
+- `scripts/build_manager.gd` handles build, sell and upgrade actions.
+- `scripts/wave_manager.gd` handles waves and difficulty scaling.
