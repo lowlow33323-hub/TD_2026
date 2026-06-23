@@ -2,7 +2,7 @@
 
 Godot 4.6.3 prototype for a side-to-side tower defense game.
 
-Current version: `Beta 0.7.1`
+Current version: `Beta 0.7.2`
 
 ## 維護文件
 
