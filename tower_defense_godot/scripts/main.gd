@@ -10,14 +10,16 @@ const GameUI = preload("res://scripts/game_ui.gd")
 const GameData = preload("res://scripts/game_data.gd")
 const WaveManager = preload("res://scripts/wave_manager.gd")
 const SaveManager = preload("res://scripts/save_manager.gd")
+const CombatManager = preload("res://scripts/combat_manager.gd")
+const BuildManager = preload("res://scripts/build_manager.gd")
+const AudioManager = preload("res://scripts/audio_manager.gd")
+const DialogManager = preload("res://scripts/dialog_manager.gd")
 const StaticBoardLayer = preload("res://scripts/static_board_layer.gd")
 const GameFont = preload("res://fonts/NotoSansTC-Regular.ttf")
 
 const MAX_IMPACT_WAVES_NORMAL := 28
 const MAX_IMPACT_WAVES_BUSY := 14
 const BUSY_VISUAL_LOAD := 130
-const MAX_SPLASH_IMPACTS_NORMAL := 3
-const MAX_SPLASH_IMPACTS_BUSY := 1
 
 var blocked: Dictionary = {}
 var towers: Array[Tower] = []
@@ -64,6 +66,7 @@ var music_enabled := true
 var sfx_enabled := true
 var music_volume := 1.0
 var sfx_volume := 1.0
+var confirmation_dialog_open := false
 
 var cell_size := 24.0
 var grid_origin := Vector2.ZERO
@@ -156,103 +159,11 @@ func _ready() -> void:
 
 
 func _build_audio() -> void:
-	cannon_audio.stream = make_tone(72.0, 0.26, 0.62, 3)
-	arrow_audio.stream = make_tone(940.0, 0.09, 0.28, 4)
-	ice_audio.stream = make_tone(610.0, 0.20, 0.34, 5)
-	wave_audio.stream = make_tone(118.0, 0.42, 0.56, 6)
-	error_audio.stream = make_tone(145.0, 0.16, 0.42, 1)
-	build_audio.stream = make_tone(760.0, 0.48, 0.38, 7)
-	remove_audio.stream = make_tone(260.0, 0.16, 0.34, 8)
-	bgm_audio.stream = make_music_loop()
-	for player in [cannon_audio, arrow_audio, ice_audio, wave_audio, error_audio, build_audio, remove_audio, bgm_audio]:
-		player.max_polyphony = 6
-		add_child(player)
-	bgm_audio.finished.connect(func() -> void:
-		bgm_audio.play()
-	)
-	_apply_audio_settings()
-	bgm_audio.play()
-
-
-func make_tone(frequency: float, duration: float, volume: float, style: int) -> AudioStreamWAV:
-	var mix_rate := 44100
-	var sample_count := int(duration * mix_rate)
-	var data := PackedByteArray()
-	data.resize(sample_count * 2)
-	for i in range(sample_count):
-		var t := float(i) / float(mix_rate)
-		var fade := 1.0 - clampf(t / duration, 0.0, 1.0)
-		var sample := sin(TAU * frequency * t)
-		if style == 1:
-			sample = sin(TAU * frequency * t) * 0.75 + sin(TAU * frequency * 0.5 * t) * 0.35
-		elif style == 2:
-			sample = sin(TAU * frequency * t) * 0.6 + sin(TAU * frequency * 1.52 * t) * 0.35
-		elif style == 3:
-			sample = sin(TAU * frequency * t) * 0.85 + sin(TAU * frequency * 0.5 * t) * 0.55 + sin(TAU * frequency * 2.0 * t) * 0.18
-			sample += randf_range(-0.16, 0.16) * fade
-		elif style == 4:
-			sample = sin(TAU * frequency * t) * 0.55 + sin(TAU * frequency * 1.98 * t) * 0.2
-			if t > duration * 0.45:
-				sample *= 0.35
-		elif style == 5:
-			sample = sin(TAU * frequency * t) * 0.45 + sin(TAU * (frequency * 1.34 + 90.0 * t) * t) * 0.38
-			sample += sin(TAU * frequency * 2.01 * t) * 0.16
-		elif style == 6:
-			var beat := 1.0 if fmod(t, 0.18) < 0.055 else 0.22
-			sample = (sin(TAU * frequency * t) * 0.9 + sin(TAU * frequency * 0.5 * t) * 0.45) * beat
-			sample += randf_range(-0.12, 0.12) * beat
-		elif style == 7:
-			var strike_time := fmod(t, 0.16)
-			var strike_fade := 1.0 - clampf(strike_time / 0.09, 0.0, 1.0)
-			var strike_on := 1.0 if t < 0.42 and strike_time < 0.09 else 0.0
-			sample = (sin(TAU * frequency * t) * 0.55 + sin(TAU * frequency * 1.62 * t) * 0.32) * strike_fade * strike_on
-			sample += randf_range(-0.18, 0.18) * strike_fade * strike_on
-		elif style == 8:
-			sample = sin(TAU * (frequency - 80.0 * t) * t) * 0.55 + sin(TAU * frequency * 0.5 * t) * 0.18
-		var value := int(clampf(sample * fade * volume, -1.0, 1.0) * 32767.0)
-		data.encode_s16(i * 2, value)
-	var stream := AudioStreamWAV.new()
-	stream.format = AudioStreamWAV.FORMAT_16_BITS
-	stream.mix_rate = mix_rate
-	stream.stereo = false
-	stream.data = data
-	return stream
-
-
-func make_music_loop() -> AudioStreamWAV:
-	var mix_rate := 44100
-	var duration := 8.0
-	var sample_count := int(duration * mix_rate)
-	var data := PackedByteArray()
-	data.resize(sample_count * 2)
-	var notes: Array[float] = [196.0, 246.94, 293.66, 392.0, 349.23, 293.66, 246.94, 220.0]
-	for i in range(sample_count):
-		var t: float = float(i) / float(mix_rate)
-		var beat_index: int = int(floor(t * 4.0)) % notes.size()
-		var local_t: float = fmod(t, 0.25)
-		var fade: float = min(1.0, local_t / 0.025) * min(1.0, (0.25 - local_t) / 0.045)
-		var note: float = notes[beat_index]
-		var kick_phase: float = fmod(t, 0.5)
-		var kick: float = sin(TAU * (86.0 - 45.0 * kick_phase) * t) * max(0.0, 1.0 - kick_phase * 8.0)
-		var hat: float = randf_range(-0.18, 0.18) if fmod(t, 0.125) < 0.025 else 0.0
-		var sample: float = sin(TAU * note * t) * 0.20 + sin(TAU * note * 2.0 * t) * 0.08
-		var bass: float = sin(TAU * 98.0 * t) * 0.12
-		var value: int = int(clampf((sample * fade + bass + kick * 0.42 + hat) * 0.55, -1.0, 1.0) * 32767.0)
-		data.encode_s16(i * 2, value)
-	var stream := AudioStreamWAV.new()
-	stream.format = AudioStreamWAV.FORMAT_16_BITS
-	stream.mix_rate = mix_rate
-	stream.stereo = false
-	stream.data = data
-	return stream
+	AudioManager.build(self)
 
 
 func _apply_audio_settings() -> void:
-	var sfx_db: float = -80.0 if not sfx_enabled or sfx_volume <= 0.0 else -9.0 + linear_to_db(sfx_volume)
-	for player in [cannon_audio, arrow_audio, ice_audio, wave_audio, error_audio, build_audio, remove_audio]:
-		player.volume_db = sfx_db
-	bgm_audio.volume_db = -80.0 if not music_enabled or music_volume <= 0.0 else -18.5 + linear_to_db(music_volume)
-
+	AudioManager.apply_settings(self)
 
 func _build_ui() -> void:
 	GameUI.build(self)
@@ -266,7 +177,7 @@ func _process(delta: float) -> void:
 	_update_layout()
 	update_static_layer_if_needed()
 	_update_hover_cell()
-	if current_screen == Defs.SCREEN_GAME and lives > 0 and not game_won:
+	if current_screen == Defs.SCREEN_GAME and lives > 0 and not game_won and not confirmation_dialog_open:
 		var game_delta := delta * game_speed
 		if boss_fight_active:
 			boss_fight_time += game_delta
@@ -468,104 +379,19 @@ func toggle_auto_start() -> void:
 
 
 func try_build_or_select(cell: Vector2i) -> void:
-	var existing := tower_at(cell)
-	if existing != null:
-		selected_tower = existing
-		show_message("已選取 %s。按 U 可升級。" % existing.name)
-		return
-
-	selected_tower = null
-	if is_wave_active():
-		reject_build("進攻波進行中，不能建造新塔。")
-		return
-
-	if not can_place_footprint(cell):
-		reject_build("2x2 塔需要完整空地，且不能覆蓋入口或出口。")
-		return
-
-	var build_cost := tower_cost(selected_build_type)
-	if gold < build_cost:
-		reject_build("金幣不足，無法建造 %s。" % tower_name(selected_build_type))
-		return
-	if footprint_has_enemy(cell):
-		reject_build("敵人正在建造範圍內，不能直接建塔。")
-		return
-
-	var test_blocked := blocked.duplicate()
-	for footprint_cell in footprint_cells(cell):
-		test_blocked[footprint_cell] = true
-	var new_path := find_path(test_blocked)
-	if new_path.is_empty():
-		reject_build("不能完全阻擋敵人的路線。")
-		return
-
-	var tower := Tower.new(cell, selected_build_type)
-	for footprint_cell in footprint_cells(cell):
-		blocked[footprint_cell] = tower
-	towers.append(tower)
-	selected_tower = tower
-	set_current_path(new_path)
-	gold -= build_cost
-	build_audio.play()
-	retarget_live_enemies()
-	show_message("已建造 2x2 %s，敵人會重新尋路。" % tower.name)
+	BuildManager.try_build_or_select(self, cell)
 
 
 func remove_tower(cell: Vector2i) -> void:
-	var tower := tower_at(cell)
-	if tower == null:
-		selected_tower = null
-		return
-	for footprint_cell in footprint_cells(tower.cell):
-		blocked.erase(footprint_cell)
-	towers.erase(tower)
-	if selected_tower == tower:
-		selected_tower = null
-	set_current_path(find_path(blocked))
-	var refund := WaveManager.tower_refund(tower.cost, difficulty_id)
-	gold += refund
-	remove_audio.play()
-	add_floating_text(tower_center(tower), "+%d" % refund, Color("#8ff0a4"))
-	retarget_live_enemies()
-	show_message("已拆除 %s。" % tower.name)
+	BuildManager.remove_tower(self, cell)
 
 
 func upgrade_selected_tower() -> void:
-	if selected_tower == null or not towers.has(selected_tower):
-		show_message("請先選取一座塔。")
-		return
-	if selected_tower.level >= Defs.MAX_TOWER_LEVEL:
-		show_message("%s 已經滿級。" % selected_tower.name)
-		return
-	var cost := selected_tower.upgrade_cost()
-	if gold < cost:
-		show_message("升級金幣不足，需要 $%d。" % cost)
-		return
-	gold -= cost
-	selected_tower.upgrade()
-	show_message("%s 已升到 %d 級。" % [selected_tower.name, selected_tower.level])
+	BuildManager.upgrade_selected_tower(self)
 
 
 func upgrade_selected_tower_to_max() -> void:
-	if selected_tower == null or not towers.has(selected_tower):
-		show_message("請先選取一座塔。")
-		return
-	if selected_tower.level >= Defs.MAX_TOWER_LEVEL:
-		show_message("%s 已經滿級。" % selected_tower.name)
-		return
-	var upgraded := 0
-	while selected_tower.level < Defs.MAX_TOWER_LEVEL:
-		var cost := selected_tower.upgrade_cost()
-		if gold < cost:
-			if upgraded > 0:
-				show_message("%s 已升到 %d 級，金幣不足無法繼續。" % [selected_tower.name, selected_tower.level])
-			else:
-				show_message("升級金幣不足，需要 $%d。" % cost)
-			return
-		gold -= cost
-		selected_tower.upgrade()
-		upgraded += 1
-	show_message("%s 已升到最高等。" % selected_tower.name)
+	BuildManager.upgrade_selected_tower_to_max(self)
 
 
 func start_wave() -> void:
@@ -692,20 +518,7 @@ func _handle_defeated_enemy(enemy: Enemy, enemy_index: int) -> bool:
 
 
 func _update_towers(delta: float) -> void:
-	for tower in towers:
-		tower.cooldown = max(0.0, tower.cooldown - delta)
-		if tower.cooldown > 0.0:
-			continue
-		var targets := enemies_for_tower(tower)
-		if targets.is_empty():
-			continue
-		var aim_vector := targets[0].pos - tower_center(tower)
-		if aim_vector.length_squared() > 0.001:
-			tower.aim_dir = aim_vector.normalized()
-		for target in targets:
-			projectiles.append(Projectile.new(tower_center(tower), target, tower))
-		tower.cooldown = tower.fire_rate
-		play_tower_sound(tower.type_id)
+	CombatManager.update_towers(self, delta)
 
 
 func play_tower_sound(type_id: String) -> void:
@@ -763,87 +576,11 @@ func boss_rank_summary() -> String:
 
 
 func _update_projectiles(delta: float) -> void:
-	for i in range(projectiles.size() - 1, -1, -1):
-		var projectile := projectiles[i]
-		if not enemies.has(projectile.target):
-			projectiles.remove_at(i)
-			continue
-
-		var direction := projectile.target.pos - projectile.pos
-		var distance := direction.length()
-		var step := projectile.speed * delta
-		if distance <= step:
-			_apply_projectile_hit(projectile)
-			projectiles.remove_at(i)
-		else:
-			projectile.pos += direction.normalized() * step
-
-
-func _apply_projectile_hit(projectile: Projectile) -> void:
-	if not projectile.target.is_targetable():
-		return
-	if projectile.tower_type == Defs.TYPE_CANNON and projectile.splash_radius > 0.0:
-		var center := projectile.target.pos
-		var shown_impacts := 0
-		var max_splash_impacts := MAX_SPLASH_IMPACTS_BUSY if visual_load() >= BUSY_VISUAL_LOAD else MAX_SPLASH_IMPACTS_NORMAL
-		for enemy in enemies:
-			if not enemy.is_targetable() or enemy.is_flying:
-				continue
-			var dist := enemy.pos.distance_to(center)
-			if dist <= projectile.splash_radius:
-				var ratio := 1.0 - clampf(dist / projectile.splash_radius, 0.0, 0.45)
-				var damage := adjusted_projectile_damage(projectile, enemy) * ratio
-				apply_damage_to_enemy(enemy, damage)
-				if enemy == projectile.target or shown_impacts < max_splash_impacts:
-					enemy.apply_hit_flash()
-					add_impact_wave(enemy.pos, projectile.color, (enemy.pos - projectile.pos).normalized())
-					shown_impacts += 1
-	else:
-		apply_damage_to_enemy(projectile.target, adjusted_projectile_damage(projectile, projectile.target))
-		projectile.target.apply_hit_flash()
-		add_impact_wave(projectile.target.pos, projectile.color, (projectile.target.pos - projectile.pos).normalized())
-		if projectile.tower_type == Defs.TYPE_ICE:
-			projectile.target.apply_slow(projectile.slow_factor, projectile.slow_duration)
-
-
-func apply_damage_to_enemy(enemy: Enemy, damage: float) -> void:
-	if enemy.is_auditor:
-		audit_damage_taken += damage
-		enemy.hp = enemy.max_hp
-	else:
-		enemy.hp -= damage
-
-
-func adjusted_projectile_damage(projectile: Projectile, enemy: Enemy) -> float:
-	var damage := float(projectile.damage)
-	if projectile.tower_type == Defs.TYPE_ARROW:
-		damage *= enemy.arrow_damage_taken_multiplier
-	return damage
+	CombatManager.update_projectiles(self, delta)
 
 
 func visual_load() -> int:
 	return enemies.size() + projectiles.size() + impact_waves.size()
-
-
-func enemies_for_tower(tower: Tower) -> Array[Enemy]:
-	var origin := tower_center(tower)
-	var candidates: Array[Enemy] = []
-	for enemy in enemies:
-		if not enemy.is_targetable():
-			continue
-		if tower.type_id == Defs.TYPE_CANNON and enemy.is_flying:
-			continue
-		if origin.distance_to(enemy.pos) <= tower.range:
-			candidates.append(enemy)
-	candidates.sort_custom(func(a: Enemy, b: Enemy) -> bool:
-		return a.index > b.index
-	)
-
-	var result: Array[Enemy] = []
-	var count: int = min(tower.target_count, candidates.size())
-	for i in range(count):
-		result.append(candidates[i])
-	return result
 
 
 func tower_at(cell: Vector2i) -> Tower:
@@ -973,25 +710,19 @@ func _update_floating_texts(delta: float) -> void:
 
 
 func confirm_return_to_menu() -> void:
-	var dialog := ConfirmationDialog.new()
-	dialog.title = "回主選單"
-	dialog.dialog_text = "確定要回主選單？目前波次進度若未存檔會遺失。"
-	dialog.confirmed.connect(func() -> void:
+	popup_confirmation("回主選單", "確定要回主選單？目前波次進度若未存檔會遺失。", func() -> void:
 		show_screen(Defs.SCREEN_MENU)
 	)
-	add_child(dialog)
-	dialog.popup_centered()
 
 
 func confirm_exit_game() -> void:
-	var dialog := ConfirmationDialog.new()
-	dialog.title = "退出遊戲"
-	dialog.dialog_text = "確定要退出遊戲？"
-	dialog.confirmed.connect(func() -> void:
+	popup_confirmation("退出遊戲", "確定要退出遊戲？", func() -> void:
 		get_tree().quit()
 	)
-	add_child(dialog)
-	dialog.popup_centered()
+
+
+func popup_confirmation(title: String, text: String, confirmed_action: Callable) -> void:
+	DialogManager.popup_confirmation(self, title, text, confirmed_action)
 
 
 func reject_build(text: String) -> void:
@@ -1143,6 +874,7 @@ func render_state() -> Dictionary:
 		"spawn_flash_timer": spawn_flash_timer,
 		"wave_banner_timer": wave_banner_timer,
 		"wave": wave,
+		"game_speed": game_speed,
 		"is_boss_wave_active": wave > 0 and wave % 10 == 0 and (boss_to_spawn or not enemies.is_empty()),
 		"towers": towers,
 		"selected_tower": selected_tower,

@@ -3,7 +3,8 @@ extends RefCounted
 const Defs = preload("res://scripts/game_defs.gd")
 
 const MAX_VISIBLE_PROJECTILES := 150
-const BUSY_VISUAL_LOAD := 130
+const BUSY_VISUAL_LOAD := 90
+const HEAVY_VISUAL_LOAD := 150
 
 
 static func render(canvas: Node2D, state: Dictionary) -> void:
@@ -19,6 +20,7 @@ static func render_static(canvas: Node2D, state: Dictionary) -> void:
 		draw_grid(canvas, state)
 		if bool(state.get("show_enemy_path", true)):
 			draw_path(canvas, state)
+		draw_tower_bases(canvas, state)
 	else:
 		draw_menu_background(canvas, viewport_size)
 
@@ -29,9 +31,11 @@ static func render_dynamic(canvas: Node2D, state: Dictionary) -> void:
 	var viewport_size := canvas.get_viewport_rect().size
 	draw_spawn_flash(canvas, state)
 	draw_build_preview(canvas, state)
-	draw_towers(canvas, state)
+	draw_selected_tower_overlay(canvas, state)
+	draw_tower_aimers(canvas, state)
 	draw_enemies(canvas, state)
-	draw_projectiles(canvas, state)
+	if float(state.get("game_speed", 1.0)) < 4.0 and int(state.get("visual_load", 0)) < HEAVY_VISUAL_LOAD:
+		draw_projectiles(canvas, state)
 	draw_impact_waves(canvas, state)
 	draw_floating_texts(canvas, state)
 	draw_wave_banner(canvas, state, viewport_size)
@@ -133,26 +137,46 @@ static func draw_path(canvas: Node2D, state: Dictionary) -> void:
 	canvas.draw_polyline(points, path_color, path_width, true)
 
 
-static func draw_towers(canvas: Node2D, state: Dictionary) -> void:
+static func draw_tower_bases(canvas: Node2D, state: Dictionary) -> void:
 	var towers: Array = state["towers"]
-	var selected_tower = state["selected_tower"]
 	var cell_size: float = state["cell_size"]
-	var grid_origin: Vector2 = state["grid_origin"]
 	for tower in towers:
-		var rect := Rect2(grid_origin + Vector2(tower.cell.x * cell_size, tower.cell.y * cell_size), Vector2(cell_size * Defs.TOWER_SIZE, cell_size * Defs.TOWER_SIZE))
 		var center := tower_center(state, tower)
-		if tower == selected_tower:
-			canvas.draw_circle(center, tower.range, Color(tower.color.r, tower.color.g, tower.color.b, 0.13))
-			canvas.draw_arc(center, tower.range, 0.0, TAU, 96, tower.color, 2.0)
-			canvas.draw_rect(rect.grow(2.0), tower.color, false, 3.0)
 		match tower.type_id:
 			Defs.TYPE_CANNON:
-				draw_cannon_tower(canvas, center, tower, cell_size)
+				draw_cannon_base(canvas, center, tower, cell_size)
 			Defs.TYPE_ARROW:
-				draw_arrow_tower(canvas, center, tower, cell_size)
+				draw_arrow_base(canvas, center, tower, cell_size)
 			Defs.TYPE_ICE:
 				draw_ice_tower(canvas, center, tower, cell_size)
 		draw_tower_level_marker(canvas, center, tower.level, cell_size)
+
+
+static func draw_selected_tower_overlay(canvas: Node2D, state: Dictionary) -> void:
+	var selected_tower = state["selected_tower"]
+	if selected_tower == null:
+		return
+	var cell_size: float = state["cell_size"]
+	var grid_origin: Vector2 = state["grid_origin"]
+	var is_busy := int(state.get("visual_load", 0)) >= BUSY_VISUAL_LOAD
+	var rect := Rect2(grid_origin + Vector2(selected_tower.cell.x * cell_size, selected_tower.cell.y * cell_size), Vector2(cell_size * Defs.TOWER_SIZE, cell_size * Defs.TOWER_SIZE))
+	var center := tower_center(state, selected_tower)
+	if not is_busy:
+		canvas.draw_circle(center, selected_tower.range, Color(selected_tower.color.r, selected_tower.color.g, selected_tower.color.b, 0.13))
+	canvas.draw_arc(center, selected_tower.range, 0.0, TAU, 32 if is_busy else 96, selected_tower.color, 2.0)
+	canvas.draw_rect(rect.grow(2.0), selected_tower.color, false, 3.0)
+
+
+static func draw_tower_aimers(canvas: Node2D, state: Dictionary) -> void:
+	var towers: Array = state["towers"]
+	var cell_size: float = state["cell_size"]
+	for tower in towers:
+		var center := tower_center(state, tower)
+		match tower.type_id:
+			Defs.TYPE_CANNON:
+				draw_cannon_aimer(canvas, center, tower, cell_size)
+			Defs.TYPE_ARROW:
+				draw_arrow_aimer(canvas, center, tower, cell_size)
 
 
 static func draw_tower_level_marker(canvas: Node2D, center: Vector2, level: int, cell_size: float) -> void:
@@ -177,24 +201,34 @@ static func draw_star(canvas: Node2D, center: Vector2, radius: float, color: Col
 
 
 static func draw_cannon_tower(canvas: Node2D, center: Vector2, tower, cell_size: float) -> void:
+	draw_cannon_base(canvas, center, tower, cell_size)
+	draw_cannon_aimer(canvas, center, tower, cell_size)
+
+
+static func draw_cannon_base(canvas: Node2D, center: Vector2, tower, cell_size: float) -> void:
+	var r := cell_size * 0.72
+	canvas.draw_circle(center + Vector2(0, r * 0.12), r, Color("#6b4a2f"))
+	canvas.draw_circle(center, r * 0.82, tower.color)
+	canvas.draw_circle(center, r * 0.46, Color("#2b2621"))
+	canvas.draw_arc(center, r * 1.02, PI * 0.1, PI * 1.9, 24, Color("#ffd99d"), 2.0)
+
+
+static func draw_cannon_aimer(canvas: Node2D, center: Vector2, tower, cell_size: float) -> void:
 	var r := cell_size * 0.72
 	var dir: Vector2 = tower.aim_dir.normalized()
 	if dir.length_squared() <= 0.001:
 		dir = Vector2.RIGHT
-	canvas.draw_circle(center + Vector2(0, r * 0.12), r, Color("#6b4a2f"))
-	canvas.draw_circle(center, r * 0.82, tower.color)
-	canvas.draw_circle(center, r * 0.46, Color("#2b2621"))
 	canvas.draw_line(center + dir * r * 0.15, center + dir * r * 1.22, Color("#ffe2af"), max(4.0, r * 0.36))
 	canvas.draw_line(center + dir * r * 0.15, center + dir * r * 1.22, Color("#3a2b22"), max(2.0, r * 0.14))
-	canvas.draw_arc(center, r * 1.02, PI * 0.1, PI * 1.9, 24, Color("#ffd99d"), 2.0)
 
 
 static func draw_arrow_tower(canvas: Node2D, center: Vector2, tower, cell_size: float) -> void:
+	draw_arrow_base(canvas, center, tower, cell_size)
+	draw_arrow_aimer(canvas, center, tower, cell_size)
+
+
+static func draw_arrow_base(canvas: Node2D, center: Vector2, tower, cell_size: float) -> void:
 	var r := cell_size * 0.82
-	var dir: Vector2 = tower.aim_dir.normalized()
-	if dir.length_squared() <= 0.001:
-		dir = Vector2.RIGHT
-	var normal := dir.orthogonal()
 	var points := PackedVector2Array([
 		center + Vector2(0, -r),
 		center + Vector2(r * 0.86, r * 0.55),
@@ -203,9 +237,17 @@ static func draw_arrow_tower(canvas: Node2D, center: Vector2, tower, cell_size: 
 	])
 	canvas.draw_colored_polygon(points, Color("#31543a"))
 	canvas.draw_polyline(points, Color("#bff2b7"), 3.0, true)
+	canvas.draw_circle(center, r * 0.32, Color("#16291b"))
+
+
+static func draw_arrow_aimer(canvas: Node2D, center: Vector2, tower, cell_size: float) -> void:
+	var r := cell_size * 0.82
+	var dir: Vector2 = tower.aim_dir.normalized()
+	if dir.length_squared() <= 0.001:
+		dir = Vector2.RIGHT
+	var normal := dir.orthogonal()
 	canvas.draw_line(center - normal * r * 0.55, center + normal * r * 0.55, Color("#efffe6"), max(2.0, r * 0.12))
 	canvas.draw_line(center - dir * r * 0.2, center + dir * r * 0.9, tower.color, max(3.0, r * 0.22))
-	canvas.draw_circle(center, r * 0.32, Color("#16291b"))
 
 
 static func draw_ice_tower(canvas: Node2D, center: Vector2, tower, cell_size: float) -> void:
@@ -228,7 +270,10 @@ static func draw_ice_tower(canvas: Node2D, center: Vector2, tower, cell_size: fl
 static func draw_enemies(canvas: Node2D, state: Dictionary) -> void:
 	var enemies: Array = state["enemies"]
 	var cell_size: float = state["cell_size"]
-	var is_busy := int(state.get("visual_load", 0)) >= BUSY_VISUAL_LOAD
+	var visual_load := int(state.get("visual_load", 0))
+	var is_busy := visual_load >= BUSY_VISUAL_LOAD
+	var is_heavy := visual_load >= HEAVY_VISUAL_LOAD
+	var hide_health_bars := float(state.get("game_speed", 1.0)) >= 4.0
 	for i in range(enemies.size()):
 		var enemy = enemies[i]
 		var visual_scale := enemy_visual_scale(enemy)
@@ -247,7 +292,7 @@ static func draw_enemies(canvas: Node2D, state: Dictionary) -> void:
 			draw_simple_enemy_body(canvas, enemy, radius, color)
 		else:
 			draw_enemy_body(canvas, enemy, radius, color)
-		if is_busy and not enemy.is_boss and i % 2 != 0:
+		if hide_health_bars or (is_heavy and not enemy.is_boss and not enemy.is_auditor) or (is_busy and not enemy.is_boss and i % 2 != 0):
 			continue
 		var hp_ratio := clampf(enemy.hp / enemy.max_hp, 0.0, 1.0)
 		var bar_width := cell_size * 1.8 if enemy.is_boss else cell_size * 0.85

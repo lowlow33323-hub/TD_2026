@@ -71,6 +71,8 @@ func _init(path_cells: Array[Vector2i], world_pos: Vector2, wave_level: int, bos
 		revive_invulnerable_duration = 3.0
 	base_speed *= float(type_data.get("speed_multiplier", 1.0))
 	hp *= float(type_data.get("hp_multiplier", 1.0))
+	if is_boss and wave_level >= 20:
+		hp *= 2.0
 	if is_boss:
 		reward *= int(type_data.get("reward_multiplier", 1))
 	else:
