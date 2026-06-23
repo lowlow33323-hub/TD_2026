@@ -1,6 +1,6 @@
 # Path Bender Tower Defense - 遊戲邏輯說明
 
-本文說明目前 `Beta 0.6.8` 的主要運行流程、檔案職責，以及 `main.gd` 與各 `.gd` 檔案之間的調用關係。這份文件的目標是讓後續調整畫面精細度、塔造型、子彈、敵人種類、場景、平衡與 Web 效能時，可以快速找到該改哪裡。
+本文說明目前 `Beta 0.7.1` 的主要運行流程、檔案職責，以及 `main.gd` 與各 `.gd` 檔案之間的調用關係。這份文件的目標是讓後續調整畫面精細度、塔造型、子彈、敵人種類、場景、平衡與 Web 效能時，可以快速找到該改哪裡。
 
 ## 專案概覽
 
@@ -357,14 +357,16 @@ return enemies.size() + projectiles.size() + impact_waves.size()
 _unhandled_input()
 ├─ 滑鼠左鍵
 │  -> world_to_cell(mouse_pos)
-│  -> try_build_or_select(cell)
-│  -> BuildManager.try_build_or_select(self, cell)
+│  -> build_confirm_enabled ? handle_touch_primary_action(cell) : try_build_or_select(cell)
 └─ 觸控點擊
    -> world_to_cell(touch_pos)
-   -> handle_touch_primary_action(cell)
-   -> 第一次點空地只顯示半透明預覽
-   -> 第二次點同一格才呼叫 try_build_or_select(cell)
+   -> build_confirm_enabled ? handle_touch_primary_action(cell) : try_build_or_select(cell)
 ```
+
+`build_confirm_enabled` 預設為 `true`。右側操作區的 `建造確認` checkbox 可切換這個值：
+
+- 開啟：第一次點空地顯示半透明塔預覽，第二次點半透明 `2x2` 範圍內任一格開始建造時間，進度滿後才呼叫 `try_build_or_select(cell)`。
+- 關閉：回到點一下直接建造。
 
 `BuildManager.validate_build(owner, cell)` 集中檢查能不能建造，會回傳：
 
@@ -428,31 +430,30 @@ GameRenderer.draw_build_preview()
 
 可建造顯示藍色半透明 `2x2`，不可建造顯示紅色半透明 `2x2`。
 
-觸控模式會額外記錄：
+二次確認模式會額外記錄：
 
 ```gdscript
 touch_build_mode
 touch_pending_build_cell
 touch_pending_can_build
+build_in_progress
+build_in_progress_cell
+build_in_progress_type
+build_progress_time
 ```
 
-當收到 `InputEventScreenTouch` 時：
+當二次確認啟用時：
 
-- 進入觸控建造模式。
+- 滑鼠左鍵與觸控點擊都會走二次確認。
 - 設定短暫的滑鼠事件忽略時間，避免同一次觸控被 Web/Godot 轉成模擬滑鼠點擊後立刻建造。
 - 點到既有塔時直接選取塔。
 - 第一次點空地時，顯示半透明 `2x2` 預覽與提示文字。
-- 第二次點同一格且仍可建造時，才真正建造。
+- 第二次點半透明 `2x2` 範圍內任一格且仍可建造時，進入建造中。
+- 建造中上方會顯示進度條。
+- 建造時間依塔種不同：箭塔 `0.2` 秒、砲塔 `0.3` 秒、冰凍塔 `0.5` 秒。
+- 進度滿後會再次檢查建造是否合法，再正式建塔。
 - 第二次點別的格子時，只移動預覽位置。
 - 若該格不可建造，顯示紅色預覽並播放錯誤音。
-
-若 Web 手機測試環境送來的是 `InputEventMouseButton` 而不是 `InputEventScreenTouch`，`main.gd` 會用 `should_confirm_build_for_pointer()` 判斷：
-
-- 已經進入觸控建造模式。
-- Godot feature 顯示為 Android、iOS、Web Android、Web iOS 或 mobile。
-- 視窗短邊小於等於 `TOUCH_BUILD_SHORT_SIDE_THRESHOLD`。
-
-符合其中一項時，滑鼠/模擬點擊也會走二次確認建造流程，方便 Chrome DevTools 手機尺寸測試。
 
 ## 路徑系統
 

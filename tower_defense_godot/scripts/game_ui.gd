@@ -58,6 +58,7 @@ static func connect_buttons(owner) -> void:
 			owner.start_wave()
 		owner._update_ui()
 	)
+	owner.build_confirm_toggle.toggled.connect(owner.set_build_confirm_enabled)
 	owner.music_toggle.toggled.connect(func(pressed: bool) -> void:
 		owner.music_enabled = pressed
 		owner._apply_audio_settings()
@@ -248,6 +249,8 @@ static func update(owner) -> void:
 	owner.path_toggle.button_pressed = owner.show_enemy_path
 	owner.auto_start_toggle.text = "自動開始"
 	owner.auto_start_toggle.button_pressed = owner.auto_start_enabled
+	owner.build_confirm_toggle.text = "建造二次確認 B"
+	owner.build_confirm_toggle.button_pressed = owner.build_confirm_enabled
 	owner.music_toggle.text = "音樂"
 	owner.music_toggle.button_pressed = owner.music_enabled
 	owner.sfx_toggle.text = "音效"
@@ -270,6 +273,7 @@ static func update(owner) -> void:
 			owner.exit_button,
 			owner.path_toggle,
 			owner.auto_start_toggle,
+			owner.build_confirm_toggle,
 			owner.music_toggle,
 			owner.sfx_toggle
 		]:
@@ -288,6 +292,7 @@ static func update(owner) -> void:
 		owner.exit_button.disabled = false
 		owner.path_toggle.disabled = false
 		owner.auto_start_toggle.disabled = false
+		owner.build_confirm_toggle.disabled = false
 		owner.music_toggle.disabled = false
 		owner.sfx_toggle.disabled = false
 		owner.music_volume_slider.editable = true
@@ -334,7 +339,7 @@ static func _build_rules_panel(owner) -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 12)
 	owner.rules_panel.add_child(box)
-	owner.rules_label.text = "操作規則\n\n1/2/3 或按鈕選塔。\n左鍵：建造或選取塔。\n觸控：第一次點空地顯示預覽，第二次點同一格建造。\n右鍵：拆除塔。\nU：升級選取塔。\n下一波：開始敵人進攻。\n\n塔現在佔地 2x2。建造前會重新計算路徑，若入口到出口被完全堵死，系統會拒絕建造。\n\n進攻波進行中不能建造新塔，可以調整速度、存檔或回主選單。"
+	owner.rules_label.text = "操作規則\n\n1/2/3 或按鈕選塔。\n左鍵/觸控：預設第一次點空地顯示半透明塔預覽，第二次點同一格開始建造。\n建造需要 0.5 秒，上方會顯示進度條。\n右側可取消「建造二次確認」，改回點一下直接建造。\nB：切換建造二次確認。\n右鍵：拆除塔。\nU：升級選取塔。\n下一波：開始敵人進攻。\n\n塔現在佔地 2x2。建造前會重新計算路徑，若入口到出口被完全堵死，系統會拒絕建造。\n\n進攻波進行中不能建造新塔，可以調整速度、存檔或回主選單。"
 	owner.rules_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	owner.rules_label.add_theme_font_size_override("font_size", 18)
 	owner.rules_label.add_theme_color_override("font_color", Color("#dde8ff"))
@@ -452,6 +457,11 @@ static func _build_game_panel(owner) -> void:
 	owner.auto_start_toggle.add_theme_font_size_override("font_size", 15)
 	owner.auto_start_toggle.add_theme_color_override("font_color", Color("#dde8ff"))
 	owner.game_options_box.add_child(owner.auto_start_toggle)
+	owner.build_confirm_toggle.text = "建造二次確認 B"
+	owner.build_confirm_toggle.button_pressed = true
+	owner.build_confirm_toggle.add_theme_font_size_override("font_size", 15)
+	owner.build_confirm_toggle.add_theme_color_override("font_color", Color("#dde8ff"))
+	owner.game_options_box.add_child(owner.build_confirm_toggle)
 	var music_row := HBoxContainer.new()
 	music_row.add_theme_constant_override("separation", 8)
 	owner.music_toggle.text = "音樂"

@@ -21,7 +21,9 @@ const INVALID_CELL := Vector2i(-999, -999)
 const MAX_IMPACT_WAVES_NORMAL := 28
 const MAX_IMPACT_WAVES_BUSY := 14
 const BUSY_VISUAL_LOAD := 130
-const TOUCH_BUILD_SHORT_SIDE_THRESHOLD := 700.0
+const BUILD_DURATION_CANNON := 0.3
+const BUILD_DURATION_ARROW := 0.2
+const BUILD_DURATION_ICE := 0.5
 
 var blocked: Dictionary = {}
 var towers: Array[Tower] = []
@@ -73,6 +75,11 @@ var touch_build_mode := false
 var touch_pending_build_cell := INVALID_CELL
 var touch_pending_can_build := false
 var touch_mouse_suppress_until_msec := 0
+var build_confirm_enabled := true
+var build_in_progress := false
+var build_in_progress_cell := INVALID_CELL
+var build_in_progress_type := Defs.TYPE_CANNON
+var build_progress_time := 0.0
 
 var cell_size := 24.0
 var grid_origin := Vector2.ZERO
@@ -136,6 +143,7 @@ var last_hover_path_result := false
 @onready var game_over_ranking_button: Button = Button.new()
 @onready var path_toggle: CheckBox = CheckBox.new()
 @onready var auto_start_toggle: CheckBox = CheckBox.new()
+@onready var build_confirm_toggle: CheckBox = CheckBox.new()
 @onready var music_toggle: CheckBox = CheckBox.new()
 @onready var sfx_toggle: CheckBox = CheckBox.new()
 @onready var music_volume_slider: HSlider = HSlider.new()
@@ -185,6 +193,7 @@ func _process(delta: float) -> void:
 	_update_hover_cell()
 	if current_screen == Defs.SCREEN_GAME and lives > 0 and not game_won and not confirmation_dialog_open:
 		var game_delta := delta * game_speed
+		_update_pending_build(delta)
 		if boss_fight_active:
 			boss_fight_time += game_delta
 		if audit_active:
@@ -214,6 +223,8 @@ func _update_layout() -> void:
 
 
 func show_screen(screen: String) -> void:
+	if screen != Defs.SCREEN_GAME:
+		cancel_pending_build()
 	GameUI.show_screen(self, screen)
 	mark_static_layer_dirty()
 
@@ -279,7 +290,7 @@ func _reset_game_state() -> void:
 	spawn_flash_timer = 0.0
 	wave_banner_timer = 0.0
 	life_flash_timer = 0.0
-	clear_touch_build_preview()
+	cancel_pending_build()
 	set_current_path(find_path(blocked))
 
 
@@ -289,7 +300,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and event.pressed:
 		touch_mouse_suppress_until_msec = Time.get_ticks_msec() + 350
 		var touch_cell := world_to_cell(event_position_to_world(event.position))
-		handle_touch_primary_action(touch_cell)
+		if build_confirm_enabled:
+			handle_touch_primary_action(touch_cell)
+		else:
+			if not is_inside_grid(touch_cell):
+				selected_tower = null
+				clear_touch_build_preview()
+				get_viewport().set_input_as_handled()
+				return
+			touch_build_mode = false
+			clear_touch_build_preview()
+			try_build_or_select(touch_cell)
 		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventMouseButton and event.pressed:
@@ -302,7 +323,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			clear_touch_build_preview()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			if should_confirm_build_for_pointer():
+			if build_confirm_enabled:
 				handle_touch_primary_action(cell)
 			else:
 				touch_build_mode = false
@@ -334,6 +355,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				toggle_enemy_path()
 			KEY_A:
 				toggle_auto_start()
+			KEY_B:
+				set_build_confirm_enabled(not build_confirm_enabled)
 			KEY_ESCAPE:
 				show_screen(Defs.SCREEN_MENU)
 
@@ -367,7 +390,7 @@ func enemy_speed_multiplier() -> float:
 
 func select_build_type(type_id: String) -> void:
 	selected_build_type = type_id
-	clear_touch_build_preview()
+	cancel_pending_build()
 	show_message("已選擇建造：%s。" % tower_name(type_id))
 
 
@@ -403,11 +426,22 @@ func toggle_auto_start() -> void:
 		start_wave()
 
 
+func set_build_confirm_enabled(enabled: bool) -> void:
+	build_confirm_enabled = enabled
+	if not build_confirm_enabled:
+		cancel_pending_build()
+	show_message("建造二次確認：%s。" % ("開啟" if build_confirm_enabled else "關閉"))
+	_update_ui()
+
+
 func try_build_or_select(cell: Vector2i) -> void:
 	BuildManager.try_build_or_select(self, cell)
 
 
 func handle_touch_primary_action(cell: Vector2i) -> void:
+	if build_in_progress:
+		show_message("正在建造中，請稍候。")
+		return
 	touch_build_mode = true
 	if not is_inside_grid(cell):
 		selected_tower = null
@@ -421,9 +455,8 @@ func handle_touch_primary_action(cell: Vector2i) -> void:
 		show_message("已選取 %s。按 U 可升級。" % existing.name)
 		return
 
-	if touch_pending_build_cell == cell and touch_pending_can_build:
-		clear_touch_build_preview()
-		try_build_or_select(cell)
+	if pending_build_contains_cell(cell) and touch_pending_can_build:
+		start_pending_build(touch_pending_build_cell)
 		return
 
 	var build_check := BuildManager.validate_build(self, cell)
@@ -440,13 +473,63 @@ func handle_touch_primary_action(cell: Vector2i) -> void:
 	queue_redraw()
 
 
-func should_confirm_build_for_pointer() -> bool:
-	if touch_build_mode:
-		return true
-	if OS.has_feature("android") or OS.has_feature("ios") or OS.has_feature("web_android") or OS.has_feature("web_ios") or OS.has_feature("mobile"):
-		return true
-	var viewport_size := get_viewport_rect().size
-	return min(viewport_size.x, viewport_size.y) <= TOUCH_BUILD_SHORT_SIDE_THRESHOLD
+func start_pending_build(cell: Vector2i) -> void:
+	var build_check := BuildManager.validate_build(self, cell)
+	if not bool(build_check["ok"]):
+		reject_build(String(build_check["message"]))
+		clear_touch_build_preview()
+		return
+	build_in_progress = true
+	build_in_progress_cell = cell
+	build_in_progress_type = selected_build_type
+	build_progress_time = 0.0
+	touch_pending_build_cell = cell
+	touch_pending_can_build = true
+	hover_cell = cell
+	hover_can_build = true
+	show_message("正在建造%s..." % tower_name(build_in_progress_type))
+
+
+func pending_build_contains_cell(cell: Vector2i) -> bool:
+	if touch_pending_build_cell == INVALID_CELL:
+		return false
+	return footprint_cells(touch_pending_build_cell).has(cell)
+
+
+func build_duration_for_type(type_id: String) -> float:
+	match type_id:
+		Defs.TYPE_ARROW:
+			return BUILD_DURATION_ARROW
+		Defs.TYPE_CANNON:
+			return BUILD_DURATION_CANNON
+		Defs.TYPE_ICE:
+			return BUILD_DURATION_ICE
+	return BUILD_DURATION_CANNON
+
+
+func _update_pending_build(delta: float) -> void:
+	if not build_in_progress:
+		return
+	if current_screen != Defs.SCREEN_GAME or is_wave_active() or lives <= 0 or game_won:
+		cancel_pending_build()
+		return
+	build_progress_time += delta
+	if build_progress_time < build_duration_for_type(build_in_progress_type):
+		return
+	var cell := build_in_progress_cell
+	var type_id := build_in_progress_type
+	cancel_pending_build()
+	selected_build_type = type_id
+	try_build_or_select(cell)
+
+
+func cancel_pending_build() -> void:
+	build_in_progress = false
+	build_in_progress_cell = INVALID_CELL
+	build_in_progress_type = selected_build_type
+	build_progress_time = 0.0
+	touch_build_mode = false
+	clear_touch_build_preview()
 
 
 func clear_touch_build_preview() -> void:
@@ -459,6 +542,7 @@ func clear_touch_build_preview() -> void:
 
 
 func remove_tower(cell: Vector2i) -> void:
+	cancel_pending_build()
 	BuildManager.remove_tower(self, cell)
 
 
@@ -471,6 +555,7 @@ func upgrade_selected_tower_to_max() -> void:
 
 
 func start_wave() -> void:
+	cancel_pending_build()
 	WaveManager.start_wave(self)
 
 
@@ -873,7 +958,7 @@ func build_ui_update_signature() -> String:
 	var countdown := ceili(next_wave_wait) if waiting_next_wave and not auto_start_enabled else -1
 	var flash_step := ceili(life_flash_timer * 10.0)
 	var message_visible := message if message_time > 0.0 else ""
-	return "%s|%d|%d|%d|%.0f|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s|%.2f|%.2f|%d|%s|%s|%d|%.1f|%s|%d" % [
+	return "%s|%d|%d|%d|%.0f|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s|%s|%.2f|%.2f|%d|%s|%s|%d|%.1f|%s|%d" % [
 		current_screen,
 		gold,
 		lives,
@@ -886,6 +971,7 @@ func build_ui_update_signature() -> String:
 		str(boss_to_spawn),
 		str(waiting_next_wave),
 		str(auto_start_enabled),
+		str(build_confirm_enabled),
 		str(show_enemy_path),
 		str(music_enabled),
 		str(sfx_enabled),
@@ -951,6 +1037,10 @@ func render_state() -> Dictionary:
 		"show_enemy_path": show_enemy_path,
 		"hover_cell": hover_cell,
 		"hover_can_build": hover_can_build,
+		"preview_tower_type": build_in_progress_type if build_in_progress else selected_build_type,
+		"build_confirm_enabled": build_confirm_enabled,
+		"build_in_progress": build_in_progress,
+		"build_progress": clampf(build_progress_time / build_duration_for_type(build_in_progress_type), 0.0, 1.0) if build_in_progress else 0.0,
 		"spawn_flash_timer": spawn_flash_timer,
 		"wave_banner_timer": wave_banner_timer,
 		"wave": wave,

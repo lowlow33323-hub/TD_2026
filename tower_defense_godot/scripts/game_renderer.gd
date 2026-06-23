@@ -31,6 +31,7 @@ static func render_dynamic(canvas: Node2D, state: Dictionary) -> void:
 	var viewport_size := canvas.get_viewport_rect().size
 	draw_spawn_flash(canvas, state)
 	draw_build_preview(canvas, state)
+	draw_build_progress(canvas, state)
 	draw_selected_tower_overlay(canvas, state)
 	draw_tower_aimers(canvas, state)
 	draw_enemies(canvas, state)
@@ -122,6 +123,59 @@ static func draw_build_preview(canvas: Node2D, state: Dictionary) -> void:
 	var color := Color(0.35, 0.75, 1.0, 0.32) if bool(state["hover_can_build"]) else Color(1.0, 0.25, 0.25, 0.32)
 	canvas.draw_rect(rect, color)
 	canvas.draw_rect(rect, color.lightened(0.35), false, max(2.0, cell_size * 0.08))
+	if bool(state["hover_can_build"]):
+		draw_tower_preview(canvas, rect.get_center(), String(state.get("preview_tower_type", Defs.TYPE_CANNON)), cell_size, bool(state.get("build_in_progress", false)))
+
+
+static func draw_tower_preview(canvas: Node2D, center: Vector2, type_id: String, cell_size: float, building: bool) -> void:
+	var alpha := 0.58 if building else 0.38
+	match type_id:
+		Defs.TYPE_CANNON:
+			var r := cell_size * 0.72
+			canvas.draw_circle(center + Vector2(0, r * 0.12), r, Color(0.42, 0.29, 0.18, alpha))
+			canvas.draw_circle(center, r * 0.82, Color(1.0, 0.69, 0.36, alpha))
+			canvas.draw_circle(center, r * 0.46, Color(0.17, 0.15, 0.13, alpha))
+			canvas.draw_line(center + Vector2(r * 0.15, 0), center + Vector2(r * 1.22, 0), Color(1.0, 0.89, 0.69, alpha), max(4.0, r * 0.36))
+		Defs.TYPE_ARROW:
+			var r := cell_size * 0.82
+			var points := PackedVector2Array([
+				center + Vector2(0, -r),
+				center + Vector2(r * 0.86, r * 0.55),
+				center + Vector2(0, r),
+				center + Vector2(-r * 0.86, r * 0.55)
+			])
+			canvas.draw_colored_polygon(points, Color(0.19, 0.33, 0.23, alpha))
+			canvas.draw_polyline(points, Color(0.75, 0.95, 0.72, alpha), 3.0, true)
+			canvas.draw_circle(center, r * 0.32, Color(0.09, 0.16, 0.11, alpha))
+			canvas.draw_line(center + Vector2(-r * 0.55, 0), center + Vector2(r * 0.55, 0), Color(0.94, 1.0, 0.90, alpha), max(2.0, r * 0.12))
+		Defs.TYPE_ICE:
+			var r := cell_size * 0.78
+			canvas.draw_circle(center, r, Color(0.14, 0.25, 0.35, alpha))
+			canvas.draw_circle(center, r * 0.75, Color(0.49, 0.87, 1.0, alpha))
+			var crystal := PackedVector2Array([
+				center + Vector2(0, -r * 1.05),
+				center + Vector2(r * 0.58, -r * 0.2),
+				center + Vector2(r * 0.38, r * 0.76),
+				center + Vector2(-r * 0.38, r * 0.76),
+				center + Vector2(-r * 0.58, -r * 0.2)
+			])
+			canvas.draw_colored_polygon(crystal, Color(0.85, 0.98, 1.0, alpha))
+			canvas.draw_polyline(crystal, Color(0.42, 0.78, 1.0, alpha), 2.0, true)
+
+
+static func draw_build_progress(canvas: Node2D, state: Dictionary) -> void:
+	if not bool(state.get("build_in_progress", false)):
+		return
+	var grid_rect: Rect2 = state["grid_rect"]
+	var progress: float = clampf(float(state.get("build_progress", 0.0)), 0.0, 1.0)
+	var width: float = min(grid_rect.size.x * 0.42, 320.0)
+	var height: float = 10.0
+	var pos := Vector2(grid_rect.position.x + (grid_rect.size.x - width) * 0.5, max(8.0, grid_rect.position.y - 24.0))
+	var rect := Rect2(pos, Vector2(width, height))
+	canvas.draw_rect(rect.grow(2.0), Color("#111722"))
+	canvas.draw_rect(rect, Color("#2b3344"))
+	canvas.draw_rect(Rect2(pos, Vector2(width * progress, height)), Color("#ffd36b"))
+	canvas.draw_rect(rect, Color("#ffe8a3"), false, 2.0)
 
 
 static func draw_path(canvas: Node2D, state: Dictionary) -> void:
