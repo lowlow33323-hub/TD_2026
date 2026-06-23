@@ -49,6 +49,7 @@ static func connect_buttons(owner) -> void:
 	owner.game_over_ranking_button.pressed.connect(func() -> void: owner.show_screen(Defs.SCREEN_RANKING))
 	owner.path_toggle.toggled.connect(func(pressed: bool) -> void:
 		owner.show_enemy_path = pressed
+		owner.mark_static_layer_dirty()
 		owner.queue_redraw()
 	)
 	owner.auto_start_toggle.toggled.connect(func(pressed: bool) -> void:

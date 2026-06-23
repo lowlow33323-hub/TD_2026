@@ -10,6 +10,7 @@ const GameUI = preload("res://scripts/game_ui.gd")
 const GameData = preload("res://scripts/game_data.gd")
 const WaveManager = preload("res://scripts/wave_manager.gd")
 const SaveManager = preload("res://scripts/save_manager.gd")
+const StaticBoardLayer = preload("res://scripts/static_board_layer.gd")
 const GameFont = preload("res://fonts/NotoSansTC-Regular.ttf")
 
 const MAX_IMPACT_WAVES_NORMAL := 28
@@ -69,7 +70,12 @@ var grid_origin := Vector2.ZERO
 var grid_rect := Rect2()
 var ui_scale := 1.0
 var last_viewport_size := Vector2.ZERO
+var static_layer_signature := ""
+var ui_update_signature := ""
+var last_hover_path_cell := Vector2i(-999, -999)
+var last_hover_path_result := false
 
+@onready var static_board_layer: Node2D = StaticBoardLayer.new()
 @onready var ui_layer: CanvasLayer = CanvasLayer.new()
 @onready var menu_panel: PanelContainer = PanelContainer.new()
 @onready var rules_panel: PanelContainer = PanelContainer.new()
@@ -136,6 +142,9 @@ var last_viewport_size := Vector2.ZERO
 
 
 func _ready() -> void:
+	static_board_layer.owner_node = self
+	static_board_layer.z_index = -10
+	add_child(static_board_layer)
 	add_child(ui_layer)
 	_build_audio()
 	_build_ui()
@@ -255,6 +264,7 @@ func _connect_ui() -> void:
 
 func _process(delta: float) -> void:
 	_update_layout()
+	update_static_layer_if_needed()
 	_update_hover_cell()
 	if current_screen == Defs.SCREEN_GAME and lives > 0 and not game_won:
 		var game_delta := delta * game_speed
@@ -283,10 +293,12 @@ func _process(delta: float) -> void:
 
 func _update_layout() -> void:
 	GameUI.update_layout(self)
+	update_static_layer_if_needed()
 
 
 func show_screen(screen: String) -> void:
 	GameUI.show_screen(self, screen)
+	mark_static_layer_dirty()
 
 
 func start_new_game() -> void:
@@ -316,7 +328,7 @@ func load_saved_game() -> void:
 			for footprint_cell in footprint_cells(tower.cell):
 				blocked[footprint_cell] = tower
 			towers.append(tower)
-	current_path = find_path(blocked)
+	set_current_path(find_path(blocked))
 	show_screen(Defs.SCREEN_GAME)
 	show_message("已讀取存檔。")
 
@@ -350,7 +362,7 @@ func _reset_game_state() -> void:
 	spawn_flash_timer = 0.0
 	wave_banner_timer = 0.0
 	life_flash_timer = 0.0
-	current_path = find_path(blocked)
+	set_current_path(find_path(blocked))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -444,6 +456,7 @@ func step_game_speed(direction: int) -> void:
 
 func toggle_enemy_path() -> void:
 	show_enemy_path = not show_enemy_path
+	mark_static_layer_dirty()
 	show_message("敵人路徑顯示：%s。" % ("開啟" if show_enemy_path else "關閉"))
 
 
@@ -491,7 +504,7 @@ func try_build_or_select(cell: Vector2i) -> void:
 		blocked[footprint_cell] = tower
 	towers.append(tower)
 	selected_tower = tower
-	current_path = new_path
+	set_current_path(new_path)
 	gold -= build_cost
 	build_audio.play()
 	retarget_live_enemies()
@@ -508,7 +521,7 @@ func remove_tower(cell: Vector2i) -> void:
 	towers.erase(tower)
 	if selected_tower == tower:
 		selected_tower = null
-	current_path = find_path(blocked)
+	set_current_path(find_path(blocked))
 	var refund := WaveManager.tower_refund(tower.cost, difficulty_id)
 	gold += refund
 	remove_audio.play()
@@ -567,7 +580,7 @@ func spawn_enemy(is_boss: bool, enemy_type: String) -> void:
 	var path := find_path(blocked)
 	if path.is_empty():
 		return
-	current_path = path
+	set_current_path(path)
 	var start_pos := cell_center(path[0])
 	var enemy := Enemy.new(path, start_pos, wave, is_boss, enemy_type, enemy_hp_multiplier(), enemy_speed_multiplier())
 	if enemy.is_flying:
@@ -585,7 +598,7 @@ func start_damage_audit() -> void:
 	var path := find_path(blocked)
 	if path.is_empty():
 		path = [Defs.START, Defs.GOAL]
-	current_path = path
+	set_current_path(path)
 	var auditor := Enemy.new(path, cell_center(path[0]), Defs.FINAL_WAVE, false, Defs.ENEMY_AUDITOR, 1.0, 1.0)
 	enemies.append(auditor)
 	audit_active = true
@@ -598,19 +611,26 @@ func _update_hover_cell() -> void:
 	if current_screen != Defs.SCREEN_GAME or is_wave_active() or lives <= 0 or game_won:
 		hover_cell = Vector2i(-999, -999)
 		hover_can_build = false
+		last_hover_path_cell = Vector2i(-999, -999)
 		return
 	var mouse_cell := world_to_cell(get_global_mouse_position())
 	if not is_inside_grid(mouse_cell):
 		hover_cell = Vector2i(-999, -999)
 		hover_can_build = false
+		last_hover_path_cell = Vector2i(-999, -999)
 		return
 	hover_cell = mouse_cell
+	if hover_cell == last_hover_path_cell:
+		hover_can_build = last_hover_path_result and not footprint_has_enemy(hover_cell)
+		return
+	last_hover_path_cell = hover_cell
 	hover_can_build = can_place_footprint(hover_cell) and not footprint_has_enemy(hover_cell)
 	if hover_can_build:
 		var test_blocked := blocked.duplicate()
 		for footprint_cell in footprint_cells(hover_cell):
 			test_blocked[footprint_cell] = true
 		hover_can_build = not find_path(test_blocked).is_empty()
+	last_hover_path_result = hover_can_build
 
 
 func enemy_type_for_spawn(spawn_index: int) -> String:
@@ -1007,11 +1027,110 @@ func _save_meta_data() -> void:
 
 
 func _update_ui() -> void:
+	var signature := build_ui_update_signature()
+	if signature == ui_update_signature:
+		return
+	ui_update_signature = signature
 	GameUI.update(self)
 
 
-func _draw() -> void:
-	GameRenderer.render(self, {
+func mark_static_layer_dirty() -> void:
+	static_layer_signature = ""
+	last_hover_path_cell = Vector2i(-999, -999)
+	if is_instance_valid(static_board_layer):
+		static_board_layer.queue_redraw()
+
+
+func update_static_layer_if_needed() -> void:
+	if not is_instance_valid(static_board_layer):
+		return
+	var signature := build_static_layer_signature()
+	if signature == static_layer_signature:
+		return
+	static_layer_signature = signature
+	static_board_layer.queue_redraw()
+
+
+func build_ui_update_signature() -> String:
+	var selected_id := "none"
+	var selected_level := 0
+	var selected_cost := 0
+	if selected_tower != null and towers.has(selected_tower):
+		selected_id = "%d,%d,%s" % [selected_tower.cell.x, selected_tower.cell.y, selected_tower.type_id]
+		selected_level = selected_tower.level
+		selected_cost = selected_tower.upgrade_cost() if selected_tower.level < Defs.MAX_TOWER_LEVEL else 0
+	var countdown := ceili(next_wave_wait) if waiting_next_wave and not auto_start_enabled else -1
+	var flash_step := ceili(life_flash_timer * 10.0)
+	var message_visible := message if message_time > 0.0 else ""
+	return "%s|%d|%d|%d|%.0f|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s|%.2f|%.2f|%d|%s|%s|%d|%.1f|%s|%d" % [
+		current_screen,
+		gold,
+		lives,
+		wave,
+		game_speed,
+		difficulty_id,
+		selected_build_type,
+		enemies_to_spawn,
+		enemies.size(),
+		str(boss_to_spawn),
+		str(waiting_next_wave),
+		str(auto_start_enabled),
+		str(show_enemy_path),
+		str(music_enabled),
+		str(sfx_enabled),
+		music_volume,
+		sfx_volume,
+		countdown,
+		selected_id,
+		message_visible,
+		flash_step,
+		audit_damage_taken,
+		str(game_won),
+		selected_level + selected_cost
+	]
+
+
+func build_static_layer_signature() -> String:
+	var viewport_size := get_viewport_rect().size
+	var blocked_cells: Array = blocked.keys()
+	blocked_cells.sort()
+	var path_cells: Array = []
+	for cell in current_path:
+		path_cells.append("%d,%d" % [cell.x, cell.y])
+	return "%s|%s|%.1f,%.1f|%.2f|%.1f,%.1f,%.1f,%.1f|%s|%s|%s|%s" % [
+		current_screen,
+		str(viewport_size),
+		grid_origin.x,
+		grid_origin.y,
+		cell_size,
+		grid_rect.position.x,
+		grid_rect.position.y,
+		grid_rect.size.x,
+		grid_rect.size.y,
+		str(blocked_cells),
+		"|".join(path_cells),
+		str(show_enemy_path),
+		str(wave > 0 and wave % 10 == 0 and (boss_to_spawn or not enemies.is_empty()))
+	]
+
+
+func set_current_path(path: Array) -> void:
+	if path_signature(path) == path_signature(current_path):
+		current_path = path
+		return
+	current_path = path
+	mark_static_layer_dirty()
+
+
+func path_signature(path: Array) -> String:
+	var parts: Array = []
+	for cell in path:
+		parts.append("%d,%d" % [cell.x, cell.y])
+	return "|".join(parts)
+
+
+func render_state() -> Dictionary:
+	return {
 		"current_screen": current_screen,
 		"grid_rect": grid_rect,
 		"grid_origin": grid_origin,
@@ -1035,4 +1154,12 @@ func _draw() -> void:
 		"lives": lives,
 		"difficulty_name": difficulty_name(),
 		"font": GameFont
-	})
+	}
+
+
+func _draw_static_layer(canvas: Node2D) -> void:
+	GameRenderer.render_static(canvas, render_state())
+
+
+func _draw() -> void:
+	GameRenderer.render_dynamic(self, render_state())

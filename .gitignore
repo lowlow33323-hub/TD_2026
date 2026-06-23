@@ -7,6 +7,7 @@
 # Local deployment/build output
 .netlify/
 **/builds/
+.codex_tools/
 
 # Imported backup copies
 _old_codex_windows/

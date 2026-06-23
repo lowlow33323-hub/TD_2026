@@ -7,6 +7,11 @@ const BUSY_VISUAL_LOAD := 130
 
 
 static func render(canvas: Node2D, state: Dictionary) -> void:
+	render_static(canvas, state)
+	render_dynamic(canvas, state)
+
+
+static func render_static(canvas: Node2D, state: Dictionary) -> void:
 	var viewport_size := canvas.get_viewport_rect().size
 	canvas.draw_rect(Rect2(Vector2.ZERO, viewport_size), Color("#10131b"))
 	draw_background_details(canvas, viewport_size)
@@ -14,18 +19,24 @@ static func render(canvas: Node2D, state: Dictionary) -> void:
 		draw_grid(canvas, state)
 		if bool(state.get("show_enemy_path", true)):
 			draw_path(canvas, state)
-		draw_spawn_flash(canvas, state)
-		draw_build_preview(canvas, state)
-		draw_towers(canvas, state)
-		draw_enemies(canvas, state)
-		draw_projectiles(canvas, state)
-		draw_impact_waves(canvas, state)
-		draw_floating_texts(canvas, state)
-		draw_wave_banner(canvas, state, viewport_size)
-		if int(state["lives"]) <= 0:
-			draw_game_over(canvas, viewport_size, state.get("font", ThemeDB.fallback_font))
 	else:
 		draw_menu_background(canvas, viewport_size)
+
+
+static func render_dynamic(canvas: Node2D, state: Dictionary) -> void:
+	if state["current_screen"] != Defs.SCREEN_GAME:
+		return
+	var viewport_size := canvas.get_viewport_rect().size
+	draw_spawn_flash(canvas, state)
+	draw_build_preview(canvas, state)
+	draw_towers(canvas, state)
+	draw_enemies(canvas, state)
+	draw_projectiles(canvas, state)
+	draw_impact_waves(canvas, state)
+	draw_floating_texts(canvas, state)
+	draw_wave_banner(canvas, state, viewport_size)
+	if int(state["lives"]) <= 0:
+		draw_game_over(canvas, viewport_size, state.get("font", ThemeDB.fallback_font))
 
 
 static func draw_background_details(canvas: Node2D, viewport_size: Vector2) -> void:
@@ -217,7 +228,9 @@ static func draw_ice_tower(canvas: Node2D, center: Vector2, tower, cell_size: fl
 static func draw_enemies(canvas: Node2D, state: Dictionary) -> void:
 	var enemies: Array = state["enemies"]
 	var cell_size: float = state["cell_size"]
-	for enemy in enemies:
+	var is_busy := int(state.get("visual_load", 0)) >= BUSY_VISUAL_LOAD
+	for i in range(enemies.size()):
+		var enemy = enemies[i]
 		var visual_scale := enemy_visual_scale(enemy)
 		var radius := (cell_size * 0.72 if enemy.is_boss else cell_size * 0.32) * visual_scale
 		var color := enemy_color(enemy)
@@ -230,13 +243,29 @@ static func draw_enemies(canvas: Node2D, state: Dictionary) -> void:
 			canvas.draw_arc(enemy.pos, radius * 1.75, 0.0, TAU, 30, Color("#e7f1ff"), max(2.0, cell_size * 0.08))
 		if enemy.is_invulnerable():
 			canvas.draw_arc(enemy.pos, radius * 1.55, 0.0, TAU, 32, Color("#f7e8aa"), max(2.0, cell_size * 0.08))
-		draw_enemy_body(canvas, enemy, radius, color)
+		if is_busy and not enemy.is_boss and enemy.hit_flash_timer <= 0.0 and not enemy.is_invulnerable():
+			draw_simple_enemy_body(canvas, enemy, radius, color)
+		else:
+			draw_enemy_body(canvas, enemy, radius, color)
+		if is_busy and not enemy.is_boss and i % 2 != 0:
+			continue
 		var hp_ratio := clampf(enemy.hp / enemy.max_hp, 0.0, 1.0)
 		var bar_width := cell_size * 1.8 if enemy.is_boss else cell_size * 0.85
 		bar_width *= visual_scale
 		var bar_pos: Vector2 = enemy.pos + Vector2(-bar_width * 0.5, -radius - cell_size * 0.28)
 		canvas.draw_rect(Rect2(bar_pos, Vector2(bar_width, max(4.0, cell_size * 0.12))), Color("#201219"))
 		canvas.draw_rect(Rect2(bar_pos, Vector2(bar_width * hp_ratio, max(4.0, cell_size * 0.12))), Color("#72e06a"))
+
+
+static func draw_simple_enemy_body(canvas: Node2D, enemy, radius: float, color: Color) -> void:
+	var pos: Vector2 = enemy.pos
+	var angle: float = enemy.facing_dir.angle() + PI
+	canvas.draw_set_transform(pos, angle, Vector2.ONE)
+	var body := Rect2(Vector2(-radius * 0.75, -radius * 0.38), Vector2(radius * 1.5, radius * 0.76))
+	canvas.draw_rect(body, color)
+	canvas.draw_circle(Vector2(-radius * 0.52, 0.0), radius * 0.42, color.darkened(0.15))
+	canvas.draw_line(Vector2(radius * 0.1, -radius * 0.2), Vector2(radius * 0.58, -radius * 0.2), color.lightened(0.22), max(1.5, radius * 0.08))
+	canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 static func enemy_visual_scale(enemy) -> float:

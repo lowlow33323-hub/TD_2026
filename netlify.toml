@@ -6,3 +6,37 @@
 [build.environment]
   GODOT_VERSION = "4.6.3"
   GODOT_TAG = "4.6.3-stable"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "require-corp"
+    Cross-Origin-Resource-Policy = "same-origin"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*.wasm"
+  [headers.values]
+    Content-Type = "application/wasm"
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.pck"
+  [headers.values]
+    Content-Type = "application/octet-stream"
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/td-*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
