@@ -21,6 +21,7 @@ const INVALID_CELL := Vector2i(-999, -999)
 const MAX_IMPACT_WAVES_NORMAL := 28
 const MAX_IMPACT_WAVES_BUSY := 14
 const BUSY_VISUAL_LOAD := 130
+const TOUCH_BUILD_SHORT_SIDE_THRESHOLD := 700.0
 
 var blocked: Dictionary = {}
 var towers: Array[Tower] = []
@@ -295,16 +296,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		if Time.get_ticks_msec() < touch_mouse_suppress_until_msec:
 			get_viewport().set_input_as_handled()
 			return
-		touch_build_mode = false
 		var cell := world_to_cell(get_global_mouse_position())
 		if not is_inside_grid(cell):
 			selected_tower = null
 			clear_touch_build_preview()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			clear_touch_build_preview()
-			try_build_or_select(cell)
+			if should_confirm_build_for_pointer():
+				handle_touch_primary_action(cell)
+			else:
+				touch_build_mode = false
+				clear_touch_build_preview()
+				try_build_or_select(cell)
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			touch_build_mode = false
 			clear_touch_build_preview()
 			remove_tower(cell)
 	elif event is InputEventKey and event.pressed and not event.echo:
@@ -433,6 +438,15 @@ func handle_touch_primary_action(cell: Vector2i) -> void:
 	else:
 		reject_build(String(build_check["message"]))
 	queue_redraw()
+
+
+func should_confirm_build_for_pointer() -> bool:
+	if touch_build_mode:
+		return true
+	if OS.has_feature("android") or OS.has_feature("ios") or OS.has_feature("web_android") or OS.has_feature("web_ios") or OS.has_feature("mobile"):
+		return true
+	var viewport_size := get_viewport_rect().size
+	return min(viewport_size.x, viewport_size.y) <= TOUCH_BUILD_SHORT_SIDE_THRESHOLD
 
 
 func clear_touch_build_preview() -> void:

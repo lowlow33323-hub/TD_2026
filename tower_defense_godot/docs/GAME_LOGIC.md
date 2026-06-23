@@ -446,6 +446,14 @@ touch_pending_can_build
 - 第二次點別的格子時，只移動預覽位置。
 - 若該格不可建造，顯示紅色預覽並播放錯誤音。
 
+若 Web 手機測試環境送來的是 `InputEventMouseButton` 而不是 `InputEventScreenTouch`，`main.gd` 會用 `should_confirm_build_for_pointer()` 判斷：
+
+- 已經進入觸控建造模式。
+- Godot feature 顯示為 Android、iOS、Web Android、Web iOS 或 mobile。
+- 視窗短邊小於等於 `TOUCH_BUILD_SHORT_SIDE_THRESHOLD`。
+
+符合其中一項時，滑鼠/模擬點擊也會走二次確認建造流程，方便 Chrome DevTools 手機尺寸測試。
+
 ## 路徑系統
 
 `main.gd` 保留 wrapper：
