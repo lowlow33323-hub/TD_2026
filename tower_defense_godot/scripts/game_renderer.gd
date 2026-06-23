@@ -2,6 +2,9 @@ extends RefCounted
 
 const Defs = preload("res://scripts/game_defs.gd")
 
+const MAX_VISIBLE_PROJECTILES := 150
+const BUSY_VISUAL_LOAD := 130
+
 
 static func render(canvas: Node2D, state: Dictionary) -> void:
 	var viewport_size := canvas.get_viewport_rect().size
@@ -392,11 +395,12 @@ static func draw_locust_enemy(canvas: Node2D, pos: Vector2, radius: float, color
 static func draw_projectiles(canvas: Node2D, state: Dictionary) -> void:
 	var projectiles: Array = state["projectiles"]
 	var cell_size: float = state["cell_size"]
-	for projectile in projectiles:
+	var stride: int = max(1, int(ceil(float(projectiles.size()) / float(MAX_VISIBLE_PROJECTILES))))
+	for i in range(0, projectiles.size(), stride):
+		var projectile = projectiles[i]
 		match projectile.tower_type:
 			Defs.TYPE_CANNON:
-				canvas.draw_circle(projectile.pos, max(4.0, cell_size * 0.18), Color("#ffcf70"))
-				canvas.draw_circle(projectile.pos, max(2.0, cell_size * 0.09), Color("#fff1bb"))
+				canvas.draw_circle(projectile.pos, max(3.0, cell_size * 0.16), Color("#ffcf70"))
 			Defs.TYPE_ARROW:
 				var direction: Vector2 = (projectile.target.pos - projectile.pos).normalized()
 				if direction.length_squared() <= 0.001:
@@ -406,7 +410,6 @@ static func draw_projectiles(canvas: Node2D, state: Dictionary) -> void:
 				canvas.draw_line(tail, head, Color("#efffe6"), max(2.0, cell_size * 0.08))
 			Defs.TYPE_ICE:
 				canvas.draw_circle(projectile.pos, max(3.0, cell_size * 0.14), Color("#bff8ff"))
-				canvas.draw_arc(projectile.pos, max(5.0, cell_size * 0.22), 0.0, TAU, 18, Color("#6de7ff"), 2.0)
 
 
 static func draw_floating_texts(canvas: Node2D, state: Dictionary) -> void:
@@ -427,6 +430,8 @@ static func draw_floating_texts(canvas: Node2D, state: Dictionary) -> void:
 static func draw_impact_waves(canvas: Node2D, state: Dictionary) -> void:
 	var impact_waves: Array = state.get("impact_waves", [])
 	var cell_size: float = state["cell_size"]
+	var is_busy := int(state.get("visual_load", 0)) >= BUSY_VISUAL_LOAD
+	var point_count := 8 if is_busy else 14
 	for entry in impact_waves:
 		if typeof(entry) != TYPE_DICTIONARY:
 			continue
@@ -441,7 +446,7 @@ static func draw_impact_waves(canvas: Node2D, state: Dictionary) -> void:
 		color.a = 0.7 * (1.0 - progress)
 		var center_angle: float = (direction * -1.0).angle()
 		var arc_half: float = PI / 3.0
-		canvas.draw_arc(pos, cell_size * (0.25 + progress * 0.75), center_angle - arc_half, center_angle + arc_half, 18, color, max(2.0, cell_size * 0.09))
+		canvas.draw_arc(pos, cell_size * (0.25 + progress * 0.75), center_angle - arc_half, center_angle + arc_half, point_count, color, max(2.0, cell_size * 0.09))
 
 
 static func draw_game_over(canvas: Node2D, viewport_size: Vector2, font: Font = null) -> void:

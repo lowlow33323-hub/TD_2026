@@ -12,6 +12,12 @@ const WaveManager = preload("res://scripts/wave_manager.gd")
 const SaveManager = preload("res://scripts/save_manager.gd")
 const GameFont = preload("res://fonts/NotoSansTC-Regular.ttf")
 
+const MAX_IMPACT_WAVES_NORMAL := 28
+const MAX_IMPACT_WAVES_BUSY := 14
+const BUSY_VISUAL_LOAD := 130
+const MAX_SPLASH_IMPACTS_NORMAL := 3
+const MAX_SPLASH_IMPACTS_BUSY := 1
+
 var blocked: Dictionary = {}
 var towers: Array[Tower] = []
 var enemies: Array[Enemy] = []
@@ -52,6 +58,7 @@ var life_flash_timer := 0.0
 var show_enemy_path := true
 var floating_texts: Array[Dictionary] = []
 var impact_waves: Array[Dictionary] = []
+var impact_wave_skip_counter := 0
 var music_enabled := true
 var sfx_enabled := true
 var music_volume := 1.0
@@ -757,6 +764,8 @@ func _apply_projectile_hit(projectile: Projectile) -> void:
 		return
 	if projectile.tower_type == Defs.TYPE_CANNON and projectile.splash_radius > 0.0:
 		var center := projectile.target.pos
+		var shown_impacts := 0
+		var max_splash_impacts := MAX_SPLASH_IMPACTS_BUSY if visual_load() >= BUSY_VISUAL_LOAD else MAX_SPLASH_IMPACTS_NORMAL
 		for enemy in enemies:
 			if not enemy.is_targetable() or enemy.is_flying:
 				continue
@@ -765,8 +774,10 @@ func _apply_projectile_hit(projectile: Projectile) -> void:
 				var ratio := 1.0 - clampf(dist / projectile.splash_radius, 0.0, 0.45)
 				var damage := adjusted_projectile_damage(projectile, enemy) * ratio
 				apply_damage_to_enemy(enemy, damage)
-				enemy.apply_hit_flash()
-				add_impact_wave(enemy.pos, projectile.color, (enemy.pos - projectile.pos).normalized())
+				if enemy == projectile.target or shown_impacts < max_splash_impacts:
+					enemy.apply_hit_flash()
+					add_impact_wave(enemy.pos, projectile.color, (enemy.pos - projectile.pos).normalized())
+					shown_impacts += 1
 	else:
 		apply_damage_to_enemy(projectile.target, adjusted_projectile_damage(projectile, projectile.target))
 		projectile.target.apply_hit_flash()
@@ -788,6 +799,10 @@ func adjusted_projectile_damage(projectile: Projectile, enemy: Enemy) -> float:
 	if projectile.tower_type == Defs.TYPE_ARROW:
 		damage *= enemy.arrow_damage_taken_multiplier
 	return damage
+
+
+func visual_load() -> int:
+	return enemies.size() + projectiles.size() + impact_waves.size()
 
 
 func enemies_for_tower(tower: Tower) -> Array[Enemy]:
@@ -906,6 +921,14 @@ func add_floating_text(pos: Vector2, text: String, color: Color) -> void:
 
 
 func add_impact_wave(pos: Vector2, color: Color, direction: Vector2) -> void:
+	var load := visual_load()
+	var max_impacts := MAX_IMPACT_WAVES_BUSY if load >= BUSY_VISUAL_LOAD else MAX_IMPACT_WAVES_NORMAL
+	if impact_waves.size() >= max_impacts:
+		return
+	if load >= BUSY_VISUAL_LOAD:
+		impact_wave_skip_counter += 1
+		if impact_wave_skip_counter % 3 != 0:
+			return
 	if direction.length_squared() <= 0.001:
 		direction = Vector2.RIGHT
 	impact_waves.append({
@@ -1006,6 +1029,7 @@ func _draw() -> void:
 		"selected_tower": selected_tower,
 		"enemies": enemies,
 		"projectiles": projectiles,
+		"visual_load": visual_load(),
 		"floating_texts": floating_texts,
 		"impact_waves": impact_waves,
 		"lives": lives,
