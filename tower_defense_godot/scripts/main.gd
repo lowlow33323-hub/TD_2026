@@ -75,6 +75,7 @@ var touch_build_mode := false
 var touch_pending_build_cell := INVALID_CELL
 var touch_pending_can_build := false
 var touch_mouse_suppress_until_msec := 0
+var touch_input_seen := false
 var build_confirm_enabled := true
 var build_in_progress := false
 var build_in_progress_cell := INVALID_CELL
@@ -298,6 +299,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if current_screen != Defs.SCREEN_GAME or lives <= 0 or game_won:
 		return
 	if event is InputEventScreenTouch and event.pressed:
+		touch_input_seen = true
 		touch_mouse_suppress_until_msec = Time.get_ticks_msec() + 350
 		var touch_cell := world_to_cell(event_position_to_world(event.position))
 		if build_confirm_enabled:
@@ -318,6 +320,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		var cell := world_to_cell(get_global_mouse_position())
+		if touch_input_seen and event.button_index == MOUSE_BUTTON_LEFT:
+			get_viewport().set_input_as_handled()
+			return
 		if not is_inside_grid(cell):
 			selected_tower = null
 			clear_touch_build_preview()
