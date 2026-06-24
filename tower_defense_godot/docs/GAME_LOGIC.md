@@ -1,6 +1,6 @@
 # Path Bender Tower Defense - 遊戲邏輯說明
 
-本文說明目前 `Beta 0.7.2` 的主要運行流程、檔案職責，以及 `main.gd` 與各 `.gd` 檔案之間的調用關係。這份文件的目標是讓後續調整畫面精細度、塔造型、子彈、敵人種類、場景、平衡與 Web 效能時，可以快速找到該改哪裡。
+本文說明目前 `Beta 0.7.4` 的主要運行流程、檔案職責，以及 `main.gd` 與各 `.gd` 檔案之間的調用關係。這份文件的目標是讓後續調整畫面精細度、塔造型、子彈、敵人種類、場景、平衡與 Web 效能時，可以快速找到該改哪裡。
 
 ## 專案概覽
 
@@ -10,6 +10,7 @@
 - 敵人可 8 方向移動，包含斜線，但不能斜穿過被塔封住的角落。
 - 第 50 波是最後一波，通過後會出現攻擊量審查員並記錄排行榜。
 - Web 版已加入分層繪製、字型子集、Netlify 自動部署、版本化資源與高負載低畫質模式。
+- 手機橫式會使用較扁的上方資訊欄，並支援雙指縮放建造區。
 
 ## 維護文件索引
 
@@ -188,6 +189,7 @@ func _process(delta: float) -> void
 1. `_update_layout()`
    - 轉呼叫 `GameUI.update_layout(self)`。
    - 更新 `cell_size`、`grid_origin`、`grid_rect`。
+   - `board_zoom` 改變時，即使視窗尺寸沒變，也會重新 layout。
 2. `update_static_layer_if_needed()`
    - 比對靜態層簽名。
    - 地圖、路徑、塔底座、格線、Boss 底色等有變才重畫靜態層。
@@ -251,6 +253,21 @@ SCREEN_GAME
 - `音樂/音效` -> 更新 audio 設定
 
 UI 文字更新有 `ui_update_signature`，沒有狀態變動時不重刷 Label/Button。
+
+手機橫式 layout：
+
+- `GameUI.update_layout(owner)` 以 `size.x > size.y and size.y < 640` 判斷手機橫式或低高度橫式視窗。
+- 手機橫式會把上方 `game_panel` 改成較狹長的資訊欄。
+- 手機橫式會縮小 stats/hint/tower 文字，並隱藏排行榜行，騰出更多建造區高度。
+- `cell_size` 會乘上 `owner.board_zoom`，讓雙指縮放可以放大或縮小建造區。
+
+選取塔浮動按鈕：
+
+- `GameUI.build(owner)` 建立 `tower_upgrade_float_button` 與 `tower_delete_float_button`。
+- `GameUI.connect_buttons(owner)` 連接 `升級` 到 `owner.upgrade_selected_tower()`。
+- `刪除` 會確認目前 `selected_tower` 仍存在，再呼叫 `owner.remove_tower(owner.selected_tower.cell)`。
+- `GameUI.update_selected_tower_actions(owner)` 依照塔中心 `owner.tower_center(owner.selected_tower)` 把兩顆按鈕放在塔周圍。
+- 滿級或金幣不足時，`升級` 按鈕 disabled。
 
 ## 對話視窗流程
 
@@ -358,12 +375,25 @@ _unhandled_input()
 ├─ 滑鼠左鍵
 │  -> world_to_cell(mouse_pos)
 │  -> build_confirm_enabled ? handle_touch_primary_action(cell) : try_build_or_select(cell)
-└─ 觸控點擊
-   -> world_to_cell(touch_pos)
-   -> build_confirm_enabled ? handle_touch_primary_action(cell) : try_build_or_select(cell)
+├─ 觸控點擊
+│  -> world_to_cell(touch_pos)
+│  -> build_confirm_enabled ? handle_touch_primary_action(cell) : try_build_or_select(cell)
+└─ 雙指拖曳
+   -> update_pinch_zoom()
+   -> 重新 layout 與重畫靜態層
 ```
 
-`build_confirm_enabled` 預設為 `true`。右側操作區的 `建造確認` checkbox 可切換這個值：
+雙指縮放狀態在 `main.gd`：
+
+- `active_touches`：記錄目前按住的觸控點。
+- `pinch_active`：目前是否處於雙指縮放。
+- `pinch_start_distance`：縮放開始時兩指距離。
+- `pinch_start_zoom`：縮放開始時的 `board_zoom`。
+- `board_zoom`：建造區縮放倍率，目前限制在 `0.75` 到 `1.85`。
+
+離開遊戲畫面或開始新遊戲時，會清掉 `active_touches` 與 `pinch_active`；新遊戲會把 `board_zoom` 重設為 `1.0`。
+
+`build_confirm_enabled` 預設為 `true`。右側操作區的 `建造二次確認` checkbox 可切換這個值：
 
 - 開啟：第一次點空地顯示半透明塔預覽，第二次點半透明 `2x2` 範圍內任一格開始建造時間，進度滿後才呼叫 `try_build_or_select(cell)`。
 - 關閉：回到點一下直接建造。
@@ -445,7 +475,7 @@ build_progress_time
 當二次確認啟用時：
 
 - 滑鼠左鍵與觸控點擊都會走二次確認。
-- 設定短暫的滑鼠事件忽略時間，避免同一次觸控被 Web/Godot 轉成模擬滑鼠點擊後立刻建造。
+- 收到真正觸控事件後，後續左鍵滑鼠事件不再參與建造確認，避免 Web/Godot 的模擬滑鼠事件把第一次觸控誤判成第二次確認。
 - 點到既有塔時直接選取塔。
 - 第一次點空地時，顯示半透明 `2x2` 預覽與提示文字。
 - 第二次點半透明 `2x2` 範圍內任一格且仍可建造時，進入建造中。

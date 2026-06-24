@@ -76,17 +76,23 @@ var touch_pending_build_cell := INVALID_CELL
 var touch_pending_can_build := false
 var touch_mouse_suppress_until_msec := 0
 var touch_input_seen := false
+var active_touches: Dictionary = {}
+var pinch_active := false
+var pinch_start_distance := 0.0
+var pinch_start_zoom := 1.0
 var build_confirm_enabled := true
 var build_in_progress := false
 var build_in_progress_cell := INVALID_CELL
 var build_in_progress_type := Defs.TYPE_CANNON
 var build_progress_time := 0.0
+var board_zoom := 1.0
 
 var cell_size := 24.0
 var grid_origin := Vector2.ZERO
 var grid_rect := Rect2()
 var ui_scale := 1.0
 var last_viewport_size := Vector2.ZERO
+var last_layout_zoom := 1.0
 var static_layer_signature := ""
 var ui_update_signature := ""
 var last_hover_path_cell := INVALID_CELL
@@ -149,6 +155,8 @@ var last_hover_path_result := false
 @onready var sfx_toggle: CheckBox = CheckBox.new()
 @onready var music_volume_slider: HSlider = HSlider.new()
 @onready var sfx_volume_slider: HSlider = HSlider.new()
+@onready var tower_upgrade_float_button: Button = Button.new()
+@onready var tower_delete_float_button: Button = Button.new()
 @onready var cannon_audio: AudioStreamPlayer = AudioStreamPlayer.new()
 @onready var arrow_audio: AudioStreamPlayer = AudioStreamPlayer.new()
 @onready var ice_audio: AudioStreamPlayer = AudioStreamPlayer.new()
@@ -226,6 +234,8 @@ func _update_layout() -> void:
 func show_screen(screen: String) -> void:
 	if screen != Defs.SCREEN_GAME:
 		cancel_pending_build()
+		active_touches.clear()
+		pinch_active = false
 	GameUI.show_screen(self, screen)
 	mark_static_layer_dirty()
 
@@ -291,6 +301,10 @@ func _reset_game_state() -> void:
 	spawn_flash_timer = 0.0
 	wave_banner_timer = 0.0
 	life_flash_timer = 0.0
+	active_touches.clear()
+	pinch_active = false
+	board_zoom = 1.0
+	last_viewport_size = Vector2.ZERO
 	cancel_pending_build()
 	set_current_path(find_path(blocked))
 
@@ -301,12 +315,18 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and event.pressed:
 		touch_input_seen = true
 		touch_mouse_suppress_until_msec = Time.get_ticks_msec() + 350
+		active_touches[event.index] = event.position
+		if active_touches.size() >= 2:
+			begin_or_update_pinch()
+			cancel_pending_build()
+			get_viewport().set_input_as_handled()
+			return
 		var touch_cell := world_to_cell(event_position_to_world(event.position))
 		if build_confirm_enabled:
 			handle_touch_primary_action(touch_cell)
 		else:
 			if not is_inside_grid(touch_cell):
-				selected_tower = null
+				clear_selected_tower()
 				clear_touch_build_preview()
 				get_viewport().set_input_as_handled()
 				return
@@ -315,6 +335,19 @@ func _unhandled_input(event: InputEvent) -> void:
 			try_build_or_select(touch_cell)
 		get_viewport().set_input_as_handled()
 		return
+	if event is InputEventScreenTouch and not event.pressed:
+		active_touches.erase(event.index)
+		if active_touches.size() < 2:
+			pinch_active = false
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventScreenDrag:
+		active_touches[event.index] = event.position
+		if active_touches.size() >= 2:
+			update_pinch_zoom()
+			cancel_pending_build()
+			get_viewport().set_input_as_handled()
+			return
 	if event is InputEventMouseButton and event.pressed:
 		if Time.get_ticks_msec() < touch_mouse_suppress_until_msec:
 			get_viewport().set_input_as_handled()
@@ -324,7 +357,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if not is_inside_grid(cell):
-			selected_tower = null
+			clear_selected_tower()
 			clear_touch_build_preview()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
@@ -439,6 +472,35 @@ func set_build_confirm_enabled(enabled: bool) -> void:
 	_update_ui()
 
 
+func begin_or_update_pinch() -> void:
+	if active_touches.size() < 2:
+		return
+	var points := active_touches.values()
+	pinch_start_distance = Vector2(points[0]).distance_to(Vector2(points[1]))
+	pinch_start_zoom = board_zoom
+	pinch_active = pinch_start_distance > 4.0
+
+
+func update_pinch_zoom() -> void:
+	if active_touches.size() < 2:
+		pinch_active = false
+		return
+	if not pinch_active:
+		begin_or_update_pinch()
+		return
+	var points := active_touches.values()
+	var distance := Vector2(points[0]).distance_to(Vector2(points[1]))
+	if pinch_start_distance <= 4.0:
+		return
+	var next_zoom := clampf(pinch_start_zoom * (distance / pinch_start_distance), 0.75, 1.85)
+	if absf(next_zoom - board_zoom) < 0.01:
+		return
+	board_zoom = next_zoom
+	last_viewport_size = Vector2.ZERO
+	mark_static_layer_dirty()
+	show_message("縮放 %.0f%%" % (board_zoom * 100.0))
+
+
 func try_build_or_select(cell: Vector2i) -> void:
 	BuildManager.try_build_or_select(self, cell)
 
@@ -449,7 +511,7 @@ func handle_touch_primary_action(cell: Vector2i) -> void:
 		return
 	touch_build_mode = true
 	if not is_inside_grid(cell):
-		selected_tower = null
+		clear_selected_tower()
 		clear_touch_build_preview()
 		return
 
@@ -460,6 +522,7 @@ func handle_touch_primary_action(cell: Vector2i) -> void:
 		show_message("已選取 %s。按 U 可升級。" % existing.name)
 		return
 
+	clear_selected_tower()
 	if pending_build_contains_cell(cell) and touch_pending_can_build:
 		start_pending_build(touch_pending_build_cell)
 		return
@@ -471,7 +534,6 @@ func handle_touch_primary_action(cell: Vector2i) -> void:
 	hover_can_build = touch_pending_can_build
 	last_hover_path_cell = INVALID_CELL
 	if touch_pending_can_build:
-		selected_tower = null
 		show_message("再次點擊此位置建造%s。" % tower_name(selected_build_type))
 	else:
 		reject_build(String(build_check["message"]))
@@ -549,6 +611,28 @@ func clear_touch_build_preview() -> void:
 func remove_tower(cell: Vector2i) -> void:
 	cancel_pending_build()
 	BuildManager.remove_tower(self, cell)
+
+
+func clear_selected_tower() -> void:
+	selected_tower = null
+
+
+func confirm_remove_selected_tower() -> void:
+	if selected_tower == null or not towers.has(selected_tower):
+		clear_selected_tower()
+		return
+	var tower := selected_tower
+	var refund := WaveManager.tower_refund(tower.cost, difficulty_id)
+	var confirmed_action := func() -> void:
+		if towers.has(tower):
+			remove_tower(tower.cell)
+	popup_confirmation(
+		"拆除塔",
+		"確定要拆除 %s？\n可退還 $%d。" % [tower.name, refund],
+		confirmed_action,
+		"是",
+		"否"
+	)
 
 
 func upgrade_selected_tower() -> void:
@@ -891,8 +975,8 @@ func confirm_exit_game() -> void:
 	)
 
 
-func popup_confirmation(title: String, text: String, confirmed_action: Callable) -> void:
-	DialogManager.popup_confirmation(self, title, text, confirmed_action)
+func popup_confirmation(title: String, text: String, confirmed_action: Callable, ok_text: String = "確定", cancel_text: String = "取消") -> void:
+	DialogManager.popup_confirmation(self, title, text, confirmed_action, ok_text, cancel_text)
 
 
 func reject_build(text: String) -> void:
@@ -999,12 +1083,13 @@ func build_static_layer_signature() -> String:
 	var path_cells: Array = []
 	for cell in current_path:
 		path_cells.append("%d,%d" % [cell.x, cell.y])
-	return "%s|%s|%.1f,%.1f|%.2f|%.1f,%.1f,%.1f,%.1f|%s|%s|%s|%s" % [
+	return "%s|%s|%.1f,%.1f|%.2f|%.2f|%.1f,%.1f,%.1f,%.1f|%s|%s|%s|%s" % [
 		current_screen,
 		str(viewport_size),
 		grid_origin.x,
 		grid_origin.y,
 		cell_size,
+		board_zoom,
 		grid_rect.position.x,
 		grid_rect.position.y,
 		grid_rect.size.x,

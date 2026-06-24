@@ -77,24 +77,28 @@ static func connect_buttons(owner) -> void:
 		owner.sfx_volume = value
 		owner._apply_audio_settings()
 	)
+	owner.tower_upgrade_float_button.pressed.connect(owner.upgrade_selected_tower)
+	owner.tower_delete_float_button.pressed.connect(owner.confirm_remove_selected_tower)
 
 
 static func update_layout(owner) -> void:
 	var size: Vector2 = owner.get_viewport_rect().size
-	if size == owner.last_viewport_size:
+	if size == owner.last_viewport_size and is_equal_approx(owner.board_zoom, owner.last_layout_zoom):
 		return
 	owner.last_viewport_size = size
+	owner.last_layout_zoom = owner.board_zoom
 	owner.ui_scale = clampf(min(size.x / 1280.0, size.y / 720.0), 0.72, 1.25)
 
 	var is_narrow: bool = size.x < 760.0
+	var is_mobile_landscape: bool = size.x > size.y and size.y < 640.0
 	var margin: float = 14.0 * owner.ui_scale
-	var info_w: float = min(540.0 * owner.ui_scale, size.x - margin * 2.0)
-	var info_h: float = 116.0 * owner.ui_scale
-	var top_h: float = 258.0 * owner.ui_scale if is_narrow else info_h + margin * 2.0
 	var side_w: float = 0.0 if is_narrow else min(240.0 * owner.ui_scale, size.x * 0.22)
+	var info_w: float = min((780.0 if is_mobile_landscape else 720.0) * owner.ui_scale, size.x - margin * 2.0 - side_w)
+	var info_h: float = 30.0 * owner.ui_scale
+	var top_h: float = 258.0 * owner.ui_scale if is_narrow else 58.0 * owner.ui_scale
 	var available_w: float = max(1.0, size.x - margin * 2.0 - side_w - margin)
 	var available_h: float = max(1.0, size.y - top_h - margin * 2.0)
-	owner.cell_size = floorf(min(available_w / float(Defs.GRID_W), available_h / float(Defs.GRID_H)))
+	owner.cell_size = floorf(min(available_w / float(Defs.GRID_W), available_h / float(Defs.GRID_H)) * owner.board_zoom)
 	owner.cell_size = max(owner.cell_size, 8.0)
 	var battle_w: float = owner.cell_size * Defs.GRID_W
 	var battle_h: float = owner.cell_size * Defs.GRID_H
@@ -118,8 +122,10 @@ static func update_layout(owner) -> void:
 	if is_narrow:
 		owner.game_panel.position = Vector2(margin, margin)
 		owner.game_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-		owner.game_panel.custom_minimum_size = Vector2(size.x - margin * 2.0, 88.0 * owner.ui_scale)
-		owner.game_panel.size = Vector2(size.x - margin * 2.0, 88.0 * owner.ui_scale)
+		owner.game_panel.custom_minimum_size = Vector2(size.x - margin * 2.0, 32.0 * owner.ui_scale)
+		owner.game_panel.size = Vector2(size.x - margin * 2.0, 32.0 * owner.ui_scale)
+		owner.tower_label.position = Vector2(margin, margin + 24.0 * owner.ui_scale)
+		owner.tower_label.custom_minimum_size = Vector2(size.x - margin * 2.0, 22.0 * owner.ui_scale)
 		owner.tower_buttons_box.position = Vector2(margin, 104.0 * owner.ui_scale)
 		owner.wave_button.position = Vector2(margin, 152.0 * owner.ui_scale)
 		owner.wave_countdown_label.position = owner.wave_button.position + Vector2(112.0 * owner.ui_scale, 9.0 * owner.ui_scale)
@@ -131,6 +137,9 @@ static func update_layout(owner) -> void:
 		owner.game_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		owner.game_panel.custom_minimum_size = Vector2(info_w, info_h)
 		owner.game_panel.size = Vector2(info_w, info_h)
+		var tower_info_w: float = min(520.0 * owner.ui_scale, size.x - side_w - margin * 3.0)
+		owner.tower_label.position = Vector2(size.x - side_w - margin - tower_info_w, margin + 24.0 * owner.ui_scale)
+		owner.tower_label.custom_minimum_size = Vector2(tower_info_w, 22.0 * owner.ui_scale)
 		var side_x: float = size.x - side_w + margin - 40.0 * owner.ui_scale
 		owner.tower_buttons_box.position = Vector2(side_x, margin)
 		owner.tower_buttons_box.position.y += 100.0 * owner.ui_scale
@@ -151,6 +160,19 @@ static func update_layout(owner) -> void:
 	owner.path_toggle.custom_minimum_size = Vector2(160.0 * owner.ui_scale, 30.0 * owner.ui_scale)
 	for slider in [owner.music_volume_slider, owner.sfx_volume_slider]:
 		slider.custom_minimum_size = Vector2(92.0 * owner.ui_scale, 24.0 * owner.ui_scale)
+	if is_mobile_landscape:
+		owner.stats_label.add_theme_font_size_override("font_size", 12)
+		owner.tower_label.add_theme_font_size_override("font_size", 9)
+		owner.leaderboard_label.visible = false
+	else:
+		owner.stats_label.add_theme_font_size_override("font_size", 18)
+		owner.tower_label.add_theme_font_size_override("font_size", 11)
+		owner.leaderboard_label.visible = true
+	owner.tower_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	owner.tower_label.clip_text = true
+	owner.hint_label.visible = false
+	owner.leaderboard_label.visible = false
+	update_selected_tower_actions(owner)
 
 
 static func show_screen(owner, screen: String) -> void:
@@ -170,6 +192,8 @@ static func show_screen(owner, screen: String) -> void:
 	owner.wave_button.visible = game_visible
 	owner.wave_countdown_label.visible = game_visible
 	owner.game_options_box.visible = game_visible
+	owner.tower_upgrade_float_button.visible = false
+	owner.tower_delete_float_button.visible = false
 	owner.game_over_panel.visible = game_visible and (owner.lives <= 0 or owner.game_won)
 	update(owner)
 	owner.queue_redraw()
@@ -177,10 +201,9 @@ static func show_screen(owner, screen: String) -> void:
 
 static func update(owner) -> void:
 	if owner.life_flash_timer > 0.0:
-		var flash_ratio: float = owner.life_flash_timer / 0.65
-		owner.game_panel.add_theme_stylebox_override("panel", make_panel_style(Color("#3b1218").lerp(Color("#171b26"), 1.0 - flash_ratio), Color("#ff6d7a")))
+		owner.stats_label.add_theme_color_override("font_color", Color("#ff8c96"))
 	else:
-		owner.game_panel.add_theme_stylebox_override("panel", make_panel_style(Color("#171b26"), Color("#3d465e")))
+		owner.stats_label.add_theme_color_override("font_color", Color("#f7e8aa"))
 	var boss_text := ""
 	if owner.wave > 0 and owner.wave % 10 == 0 and (owner.boss_to_spawn or not owner.enemies.is_empty()):
 		boss_text = "    Boss"
@@ -299,6 +322,27 @@ static func update(owner) -> void:
 		owner.sfx_volume_slider.editable = true
 	owner.game_over_ranking_button.visible = owner.game_won
 	owner.game_over_panel.visible = owner.current_screen == Defs.SCREEN_GAME and (owner.lives <= 0 or owner.game_won)
+	update_selected_tower_actions(owner)
+
+
+static func update_selected_tower_actions(owner) -> void:
+	var visible: bool = owner.current_screen == Defs.SCREEN_GAME and owner.selected_tower != null and owner.towers.has(owner.selected_tower) and owner.lives > 0 and not owner.game_won
+	owner.tower_upgrade_float_button.visible = visible
+	owner.tower_delete_float_button.visible = visible
+	if not visible:
+		return
+	var center: Vector2 = owner.tower_center(owner.selected_tower)
+	var offset: float = max(26.0, owner.cell_size * 1.35)
+	var button_size: Vector2 = Vector2(58.0 * owner.ui_scale, 32.0 * owner.ui_scale)
+	var y_shift: float = 20.0 * owner.ui_scale
+	owner.tower_upgrade_float_button.custom_minimum_size = button_size
+	owner.tower_delete_float_button.custom_minimum_size = button_size
+	owner.tower_upgrade_float_button.text = "升級"
+	owner.tower_delete_float_button.text = "刪除"
+	owner.tower_upgrade_float_button.disabled = owner.selected_tower.level >= Defs.MAX_TOWER_LEVEL or owner.gold < owner.selected_tower.upgrade_cost()
+	owner.tower_delete_float_button.disabled = false
+	owner.tower_upgrade_float_button.position = center + Vector2(-button_size.x - 6.0, -offset - button_size.y * 0.5 + y_shift)
+	owner.tower_delete_float_button.position = center + Vector2(6.0, -offset - button_size.y * 0.5 + y_shift)
 
 
 static func _build_menu_panel(owner) -> void:
@@ -387,22 +431,22 @@ static func _build_difficulty_panel(owner) -> void:
 
 
 static func _build_game_panel(owner) -> void:
-	owner.game_panel.add_theme_stylebox_override("panel", make_panel_style(Color("#171b26"), Color("#3d465e")))
+	var transparent_style := StyleBoxEmpty.new()
+	owner.game_panel.add_theme_stylebox_override("panel", transparent_style)
 	owner.ui_layer.add_child(owner.game_panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 	owner.game_panel.add_child(box)
 	owner.game_panel.clip_contents = true
 
-	for label in [owner.stats_label, owner.hint_label, owner.tower_label, owner.leaderboard_label]:
-		# Keep game panel labels fixed-height friendly; autowrap can stretch the panel vertically.
-		label.add_theme_font_size_override("font_size", 11)
-		box.add_child(label)
+	owner.stats_label.add_theme_font_size_override("font_size", 11)
+	box.add_child(owner.stats_label)
 	owner.stats_label.add_theme_font_size_override("font_size", 18)
 	owner.stats_label.add_theme_color_override("font_color", Color("#f7e8aa"))
 	owner.hint_label.add_theme_color_override("font_color", Color("#dde8ff"))
 	owner.tower_label.add_theme_color_override("font_color", Color("#cbe7ff"))
 	owner.leaderboard_label.add_theme_color_override("font_color", Color("#ffdca0"))
+	owner.ui_layer.add_child(owner.tower_label)
 
 	owner.ui_layer.add_child(owner.tower_buttons_box)
 	owner.tower_buttons_box.add_theme_constant_override("separation", 8)
@@ -488,6 +532,14 @@ static func _build_game_panel(owner) -> void:
 	sfx_row.add_child(owner.sfx_toggle)
 	sfx_row.add_child(owner.sfx_volume_slider)
 	owner.game_options_box.add_child(sfx_row)
+
+	for button in [owner.tower_upgrade_float_button, owner.tower_delete_float_button]:
+		button.add_theme_font_size_override("font_size", 14)
+		button.add_theme_stylebox_override("normal", make_panel_style(Color("#26303d"), Color("#ffd36b")))
+		button.add_theme_stylebox_override("hover", make_panel_style(Color("#3a4556"), Color("#ffe8a3")))
+		button.add_theme_stylebox_override("disabled", make_panel_style(Color("#222631"), Color("#5d6472")))
+		owner.ui_layer.add_child(button)
+		button.visible = false
 
 	owner.game_over_panel.add_theme_stylebox_override("panel", make_panel_style(Color("#171b26"), Color("#ff8da1")))
 	owner.ui_layer.add_child(owner.game_over_panel)

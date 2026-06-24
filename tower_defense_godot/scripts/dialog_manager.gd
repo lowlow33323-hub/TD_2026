@@ -4,7 +4,7 @@ const GameUI = preload("res://scripts/game_ui.gd")
 const GameFont = preload("res://fonts/NotoSansTC-Regular.ttf")
 
 
-static func popup_confirmation(owner, title: String, text: String, confirmed_action: Callable) -> void:
+static func popup_confirmation(owner, title: String, text: String, confirmed_action: Callable, ok_text: String = "確定", cancel_text: String = "取消") -> void:
 	if owner.confirmation_dialog_open:
 		return
 	owner.confirmation_dialog_open = true
@@ -49,11 +49,11 @@ static func popup_confirmation(owner, title: String, text: String, confirmed_act
 	buttons.add_theme_constant_override("separation", 12)
 	box.add_child(buttons)
 	var ok_button := Button.new()
-	ok_button.text = "確定"
+	ok_button.text = ok_text
 	ok_button.custom_minimum_size = Vector2(104.0, 38.0)
 	ok_button.add_theme_font_override("font", GameFont)
 	var cancel_button := Button.new()
-	cancel_button.text = "取消"
+	cancel_button.text = cancel_text
 	cancel_button.custom_minimum_size = Vector2(104.0, 38.0)
 	cancel_button.add_theme_font_override("font", GameFont)
 	buttons.add_child(ok_button)
